@@ -34,5 +34,6 @@ ACRONYM_MAP = {
     'Crm': 'CRM', 'Erp': 'ERP', 'Ui': 'UI', 'Ux': 'UX',
     'Css': 'CSS', 'Html': 'HTML', 'Saas': 'SaaS', 'Dbt': 'dbt',
     'Sas': 'SAS', 'Vba': 'VBA', 'Kpi': 'KPI', 'Dag': 'DAG',
-    'Nlp': 'NLP', 'Olap': 'OLAP',
+    'Nlp': 'NLP', 'Olap': 'OLAP', 'Apis': 'APIs',
+    'Adls Gen2': 'ADLS Gen2',
 }

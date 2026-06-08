@@ -1,4 +1,5 @@
 import logging
+import re
 from html import escape
 import streamlit as st
 import plotly.express as px
@@ -471,6 +472,19 @@ def _render_tiers(tiers: dict):
                 unsafe_allow_html=True
             )
 
+def _clean_roadmap_steps(roadmap: str) -> list[str]:
+    #groq sometimes returns "Step N: Step N: ..." with a duplicated prefix
+    #this strips the redundant repetition so only one "Step N:" appears
+    steps = []
+    for line in roadmap.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        #collapse repeated "Step N:" prefixes e.g. "Step 3: Step 3: Learn X" → "Step 3: Learn X"
+        line = re.sub(r'^(Step\s+\d+:\s*)+', lambda m: m.group(0).split(':', 1)[0] + ': ', line, flags=re.IGNORECASE)
+        steps.append(line)
+    return steps
+
 def _render_skill_gap(gap: dict, search_term: str, missing_skills: list, user_skills: list):
     overlap_pct = gap["overlap_pct"]
     matched = gap["matched"]
@@ -512,7 +526,7 @@ def _render_skill_gap(gap: dict, search_term: str, missing_skills: list, user_sk
     roadmap = st.session_state[cache_key]
     if roadmap:
         st.markdown("<span class='gap-meta-label'>Your Learning Roadmap</span>", unsafe_allow_html=True)
-        steps = [line.strip() for line in roadmap.split('\n') if line.strip()]
+        steps = _clean_roadmap_steps(roadmap)
         for step in steps:
             st.markdown(f"<div class='roadmap-step'>{escape(step)}</div>", unsafe_allow_html=True)
 
@@ -550,6 +564,10 @@ if len(search_term_clean) < MIN_SEARCH_LENGTH:
 
 if len(search_term_clean) > MAX_SEARCH_LENGTH:
     st.warning(f"search term is too long. keep it under {MAX_SEARCH_LENGTH} characters.")
+    st.stop()
+
+if not re.search(r'[a-zA-Z]', search_term_clean):
+    st.warning("please enter a valid job title.")
     st.stop()
 
 if state.is_new_search(search_term_clean):

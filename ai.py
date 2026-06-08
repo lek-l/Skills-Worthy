@@ -57,6 +57,19 @@ _SKILL_ALIASES = {
     'figma': 'Figma', 'sketch': 'Sketch', 'photoshop': 'Photoshop',
     'autocad': 'AutoCAD', 'solidworks': 'SolidWorks',
     'matlab': 'MATLAB', 'sas': 'SAS', 'spss': 'SPSS',
+    'graphql': 'GraphQL',
+}
+
+#vague buzzwords that slip through as "skills" — filtered at extraction time
+_EXCLUDED_TERMS = {
+    'none', 'n/a', 'na', 'null',
+    'no technical skills mentioned',
+    'no technical skills',
+    'not mentioned',
+    'none mentioned',
+    'ai',
+    'optimization',
+    'programming',
 }
 
 class SkillExtractionResult:
@@ -140,18 +153,11 @@ Job postings:
                 continue
             skills_part = line.split(':', 1)[1]
             skills = [
-            
                 _normalize_skill(s)
                 for s in skills_part.split(',')
                 if s.strip()
-                and 1 < len(s.strip()) < 30
-                and s.strip().lower() not in (
-                    'none', 'n/a', 'na', 'null',
-                    'no technical skills mentioned',
-                    'no technical skills',
-                    'not mentioned',
-                    'none mentioned',  
-                )
+                and 1 < len(s.strip()) < 28
+                and s.strip().lower() not in _EXCLUDED_TERMS
             ]
             all_skills.extend(skills)
 
@@ -230,6 +236,7 @@ def generate_roadmap(query: str, missing_skills: list[str], user_skills: list[st
 They know: {known_str}
 They are missing: {missing_str}
 Write exactly 5 steps. Each step is one sentence starting with Step N:.
+Do NOT repeat the step label inside the sentence — just write the sentence after "Step N:".
 Prioritize the most in-demand missing skills first. Nothing else."""
 
     return _call_groq(prompt, max_tokens=300)

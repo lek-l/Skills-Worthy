@@ -42,12 +42,12 @@ def build_skill_dataframe(skill_counts: Counter, search_term: str) -> pd.DataFra
     #this function only filters, applies acronym corrections, and ranks
     search_words = set(search_term.lower().split())
 
-    #generic office terms that aren't role-specific technical skills
+    #generic terms that aren't concrete technical skills
     generic_terms = {
         'Word', 'Access', 'Windows', 'Office', 'Udb',
-    'Powerpoint', 'Power Point', 'Outlook', 'Teams',
-    'None', 'N/A', 'Na','no technical skills mentioned',
-    'no technical skills', 'not mentioned',
+        'Powerpoint', 'Power Point', 'Outlook', 'Teams',
+        'None', 'N/A', 'Na', 'Optimization', 'Programming',
+        'Scaled Agile Framework',
     }
 
     normalized = Counter()
