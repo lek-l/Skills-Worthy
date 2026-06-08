@@ -150,6 +150,7 @@ Job postings:
                     'no technical skills mentioned',
                     'no technical skills',
                     'not mentioned',
+                    'none mentioned',  
                 )
             ]
             all_skills.extend(skills)
