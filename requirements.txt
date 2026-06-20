@@ -1,6 +1,6 @@
 streamlit
+pandas
 plotly
 groq
 requests
-pandas
 python-dotenv
