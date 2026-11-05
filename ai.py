@@ -162,7 +162,7 @@ Return one line per posting:
 Job postings:
 {numbered}"""
 
-        result = _call_groq(prompt, max_tokens=200)
+        result = _call_groq(prompt, max_tokens=500)
         if not result:
             continue
 
