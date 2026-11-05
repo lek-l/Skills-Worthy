@@ -8,6 +8,8 @@ from config import (
     GROQ_API_KEY,
     GROQ_MODEL,
     GROQ_TEMPERATURE,
+    GROQ_REASONING_EFFORT,
+    GROQ_REASONING_HEADROOM,
     DESCRIPTION_BATCH_SIZE,
     MAX_DESCRIPTIONS,
     MAX_SOFT_SKILLS,
@@ -90,18 +92,33 @@ class InsightResult:
         self.available = text is not None and len(text.strip()) > 0
 
 def _call_groq(prompt: str, max_tokens: int) -> str | None:
-    #single groq call — returns none on failure
+    #single groq call, returns none on failure
+    #gpt oss models spend part of the token budget on hidden reasoning, so the cap is
+    #raised by a fixed headroom and the effort is kept low
+    #max_tokens here means the budget for the visible answer
+    request = {
+        "model": GROQ_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens + GROQ_REASONING_HEADROOM,
+        "temperature": GROQ_TEMPERATURE,
+    }
+    if GROQ_MODEL.startswith("openai/gpt-oss"):
+        #reasoning_effort is only accepted by some models, other models would reject it
+        request["extra_body"] = {"reasoning_effort": GROQ_REASONING_EFFORT}
+
     try:
-        response = _client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=GROQ_TEMPERATURE
-        )
-        return response.choices[0].message.content.strip()
+        response = _client.chat.completions.create(**request)
     except Exception as e:
         logger.error("groq call failed: %s", e)
         return None
+
+    choice = response.choices[0]
+    content = choice.message.content
+    if not content or not content.strip():
+        #an empty answer is a failure, so it is logged instead of passing silently
+        logger.warning("groq returned empty content (finish_reason=%s)", choice.finish_reason)
+        return None
+    return content.strip()
 
 def _truncate_description(description: str, max_chars: int = 600) -> str:
     #truncate to first max_chars — skills appear early in postings
@@ -112,7 +129,8 @@ def _truncate_description(description: str, max_chars: int = 600) -> str:
 def _normalize_skill(skill: str) -> str:
     #normalize skill name to canonical form using _SKILL_ALIASES
     #unknown skills fall back to their original casing from groq
-    cleaned = skill.strip().strip('.-').strip()
+    #split and join collapses any unicode space, like the narrow no break space groq sometimes emits
+    cleaned = " ".join(skill.split()).strip('.-').strip()
     lookup = cleaned.lower()
     return _SKILL_ALIASES.get(lookup, cleaned)
 

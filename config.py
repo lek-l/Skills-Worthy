@@ -12,7 +12,11 @@ JSEARCH_TIMEOUT = 10
 
 #groq
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "llama-3.3-70b-versatile"
+#groq model, read from the environment so the next deprecation is a settings change
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
+#extra tokens added to every request so hidden reasoning cannot crowd out the visible answer
+GROQ_REASONING_HEADROOM = 300
 GROQ_TEMPERATURE = 0.3
 
 #skill extraction
