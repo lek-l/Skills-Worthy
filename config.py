@@ -8,7 +8,7 @@ JSEARCH_BASE_URL = "https://jsearch.p.rapidapi.com/search"
 JSEARCH_HOST = "jsearch.p.rapidapi.com"
 JSEARCH_API_KEY = os.getenv("JSEARCH_API_KEY")
 JSEARCH_PAGES = 3
-JSEARCH_TIMEOUT = 10
+JSEARCH_TIMEOUT = 15
 
 #groq
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
