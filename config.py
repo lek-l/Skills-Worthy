@@ -48,4 +48,5 @@ ACRONYM_MAP = {
     'Matlab': 'MATLAB', 'Spss': 'SPSS',
     'Power Bi': 'Power BI', 'Powerbi': 'Power BI',
     'Bigquery': 'BigQuery', 'Adls Gen2': 'ADLS Gen2',
+    'Netsuite': 'NetSuite',
 }

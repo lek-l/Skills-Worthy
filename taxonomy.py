@@ -27,7 +27,7 @@ _TAXONOMY = dict([
     _build('TypeScript', _wp('typescript'), _wp('ts') + r'(?!\b[A-Z])'),
     _build('C++', r'\bc\+\+\b'),
     _build('C#', r'\bc#\b', _wp('c sharp'), _wp('csharp')),
-    _build('Go', _wp('golang'), _wp('go language'), _wp('go programming')),
+    _build('Go', _wp('golang')),    
     _build('Rust', _wp('rust') + r'(?=.*(?:programming|developer|engineer|lang))'),
     _build('Ruby', _wp('ruby')),
     _build('PHP', _wp('php')),
