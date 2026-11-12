@@ -147,25 +147,19 @@ Return ONLY a comma-separated list. Nothing else.
 
 
 def extract_skills(descriptions: list[str]) -> SkillExtractionResult:
-    #hybrid extraction pipeline:
-    #  step 1: python regex scans ALL descriptions against 200-skill taxonomy (0 api calls)
-    #  step 2: groq reads a sample for niche skills not in taxonomy (1 api call)
-    #  step 3: python counts niche skills across ALL descriptions (0 api calls)
-    #  step 4: merge both counters
-    #total: 1 groq call, every description counted, deterministic frequency
     if not descriptions:
         return SkillExtractionResult(counts=Counter())
 
-    capped = [_truncate_description(d) for d in descriptions[:MAX_DESCRIPTIONS]]
+    capped = descriptions[:MAX_DESCRIPTIONS]
 
-    #step 1 — taxonomy scan, all descriptions, instant
+    #step 1 — taxonomy scans FULL descriptions, no truncation needed (regex, not LLM)
     taxonomy_counts = count_taxonomy_skills(capped)
 
-    #step 2 — groq discovers niche skills from a sample
-    sample = capped[:NICHE_SAMPLE_SIZE]
+    #step 2 — groq only reads truncated sample (saves tokens)
+    sample = [_truncate_description(d) for d in capped[:NICHE_SAMPLE_SIZE]]
     niche_skills = _discover_niche_skills(sample, set(taxonomy_counts.keys()))
 
-    #step 3 — python counts niche skills across all descriptions
+    #step 3 — count niche skills across full descriptions
     niche_counts = count_specific_skills(capped, niche_skills)
 
     #step 4 — merge
