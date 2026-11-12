@@ -8,20 +8,19 @@ from config import (
     GROQ_API_KEY,
     GROQ_MODEL,
     GROQ_TEMPERATURE,
-    DESCRIPTION_BATCH_SIZE,
     MAX_DESCRIPTIONS,
     MAX_SOFT_SKILLS,
     ACRONYM_MAP,
+    NICHE_SAMPLE_SIZE,
 )
+from taxonomy import count_taxonomy_skills, count_specific_skills, TAXONOMY_NAMES
 
 logger = logging.getLogger(__name__)
 
 #client built once at module level
 _client = Groq(api_key=GROQ_API_KEY)
 
-#common skill name variations — normalize to canonical form
-#ensures js and javascript count as the same skill across batches
-#groq is prompted to use canonical names but doesn't always comply
+#skill name variations for normalizing groq output
 _SKILL_ALIASES = {
     'js': 'JavaScript', 'javascript': 'JavaScript', 'node': 'Node.js',
     'node.js': 'Node.js', 'nodejs': 'Node.js', 'react.js': 'React',
@@ -29,48 +28,26 @@ _SKILL_ALIASES = {
     'postgres': 'PostgreSQL', 'postgresql': 'PostgreSQL',
     'mongo': 'MongoDB', 'mongodb': 'MongoDB',
     'py': 'Python', 'python3': 'Python',
-    'ms excel': 'Excel', 'microsoft excel': 'Excel',
-    'ms sql': 'SQL Server', 'microsoft sql server': 'SQL Server',
-    'gcp': 'Google Cloud', 'google cloud platform': 'Google Cloud',
-    'amazon web services': 'AWS', 'azure': 'Azure',
     'powerbi': 'Power BI', 'power bi': 'Power BI',
-    'tableau': 'Tableau', 'looker': 'Looker',
     'scikit learn': 'Scikit-learn', 'sklearn': 'Scikit-learn',
-    'tensorflow': 'TensorFlow', 'tf': 'TensorFlow',
-    'pytorch': 'PyTorch', 'torch': 'PyTorch',
+    'tensorflow': 'TensorFlow', 'pytorch': 'PyTorch',
     'dbt': 'dbt', 'data build tool': 'dbt',
-    'git': 'Git', 'github': 'GitHub', 'gitlab': 'GitLab',
-    'docker': 'Docker', 'kubernetes': 'Kubernetes', 'k8s': 'Kubernetes',
-    'spark': 'Apache Spark', 'apache spark': 'Apache Spark',
-    'airflow': 'Apache Airflow', 'apache airflow': 'Apache Airflow',
-    'snowflake': 'Snowflake', 'redshift': 'Redshift',
-    'bigquery': 'BigQuery', 'databricks': 'Databricks',
-    'machine learning': 'Machine Learning', 'ml': 'Machine Learning',
-    'artificial intelligence': 'AI', 'deep learning': 'Deep Learning',
-    'natural language processing': 'NLP', 'nlp': 'NLP',
-    'sql server': 'SQL Server', 'mysql': 'MySQL', 'sqlite': 'SQLite',
-    'r language': 'R', 'r programming': 'R',
-    'excel': 'Excel', 'vba': 'VBA', 'power query': 'Power Query',
-    'quickbooks': 'QuickBooks', 'quickbooks online': 'QuickBooks Online',
-    'salesforce': 'Salesforce', 'sap': 'SAP', 'oracle': 'Oracle',
-    'jira': 'Jira', 'confluence': 'Confluence', 'trello': 'Trello',
-    'figma': 'Figma', 'sketch': 'Sketch', 'photoshop': 'Photoshop',
+    'k8s': 'Kubernetes', 'kubernetes': 'Kubernetes',
+    'graphql': 'GraphQL',
+    'quickbooks': 'QuickBooks',
     'autocad': 'AutoCAD', 'solidworks': 'SolidWorks',
     'matlab': 'MATLAB', 'sas': 'SAS', 'spss': 'SPSS',
-    'graphql': 'GraphQL',
 }
 
-#vague buzzwords that slip through as "skills" — filtered at extraction time
-_EXCLUDED_TERMS = {
-    'none', 'n/a', 'na', 'null',
-    'no technical skills mentioned',
-    'no technical skills',
-    'not mentioned',
-    'none mentioned',
-    'ai',
-    'optimization',
-    'programming',
+#terms to exclude even after normalization
+_EXCLUDED_SKILLS = {
+    'ai', 'optimization', 'programming', 'analytics', 'reporting',
+    'data', 'analysis', 'management', 'development', 'testing',
+    'design', 'research', 'modeling', 'automation', 'integration',
+    'infrastructure', 'engineering', 'architecture', 'monitoring',
+    'documentation', 'security', 'networking', 'communication',
 }
+
 
 class SkillExtractionResult:
     def __init__(self, counts: Counter):
@@ -78,19 +55,20 @@ class SkillExtractionResult:
 
     @property
     def total(self) -> int:
-        #number of distinct skills found
         return len(self.counts)
 
     def is_empty(self) -> bool:
         return self.total == 0
+
 
 class InsightResult:
     def __init__(self, text: str | None):
         self.text = text
         self.available = text is not None and len(text.strip()) > 0
 
+
 def _call_groq(prompt: str, max_tokens: int) -> str | None:
-    #single groq call, returns none on failure
+    #single groq call, returns none on failure or empty response
     try:
         response = _client.chat.completions.create(
             model=GROQ_MODEL,
@@ -109,94 +87,106 @@ def _call_groq(prompt: str, max_tokens: int) -> str | None:
         return None
     return content.strip()
 
+
 def _truncate_description(description: str, max_chars: int = 600) -> str:
-    #truncate to first max_chars — skills appear early in postings
     if len(description) <= max_chars:
         return description
     return description[:max_chars]
 
+
 def _normalize_skill(skill: str) -> str:
-    #normalize skill name to canonical form using _SKILL_ALIASES
-    #unknown skills fall back to their original casing from groq
-    #split and join collapses any unicode space, like the narrow no break space groq sometimes emits
-    cleaned = " ".join(skill.split()).strip('.-').strip()
+    #collapse unicode spaces, strip punctuation, look up alias, fallback to title case with acronym fix
+    cleaned = " ".join(skill.split()).strip('.-•*– ').strip()
+    if not cleaned:
+        return ""
     lookup = cleaned.lower()
-    return _SKILL_ALIASES.get(lookup, cleaned)
+    if lookup in _SKILL_ALIASES:
+        return _SKILL_ALIASES[lookup]
+    result = cleaned.title()
+    return ACRONYM_MAP.get(result, result)
+
 
 def _is_role_noise(skill_lower: str, search_words: set) -> bool:
-    #returns true if any search word appears as a whole word in the skill name
-    #prevents "data analyst" from filtering out "databricks" (substring false positive)
     skill_words = set(re.findall(r'\b\w+\b', skill_lower))
     return any(word in skill_words for word in search_words if len(word) > 3)
 
-def _extract_skills_from_all(descriptions: list[str]) -> Counter:
-    #extract skills per description then count in python
-    #normalization ensures js and javascript count as the same skill
-    #python does the counting — groq just identifies skills per posting
-    all_skills = []
 
-    for i in range(0, len(descriptions), DESCRIPTION_BATCH_SIZE):
-        batch = descriptions[i:i + DESCRIPTION_BATCH_SIZE]
-        numbered = "\n\n".join([f"[{j+1}] {d}" for j, d in enumerate(batch)])
+def _discover_niche_skills(sample_descriptions: list[str], known_skills: set) -> list[str]:
+    #asks groq to find skills in a sample that the taxonomy missed
+    #returns only skills NOT already in the taxonomy — no duplicates
+    #this is the one groq call in the extraction pipeline
+    combined = "\n---\n".join(sample_descriptions)
 
-        prompt = f"""For each numbered job posting, list every technical skill mentioned.
-Technical skills only: programming languages, tools, software, frameworks, platforms, databases, methodologies.
-Do NOT include: industry terms, business concepts, soft skills, job titles, company names, general concepts.
-Use full canonical names: JavaScript not JS, PostgreSQL not Postgres, Machine Learning not ML.
+    prompt = f"""List every technical skill, tool, software, platform, or framework mentioned in these job postings.
+Return ONLY a comma-separated list. Nothing else.
 
-Return one line per posting:
-1: Python, SQL, Tableau
-2: Java, AWS, Docker
+{combined}"""
 
-Job postings:
-{numbered}"""
+    result = _call_groq(prompt, max_tokens=200)
+    if not result:
+        return []
 
-        result = _call_groq(prompt, max_tokens=500)
-        if not result:
+    #normalize and filter — keep only skills the taxonomy doesn't already cover
+    niche = []
+    known_lower = {s.lower() for s in known_skills}
+    seen = set()
+    for raw in result.split(','):
+        raw = raw.strip()
+        if not raw or len(raw) < 2 or len(raw) > 40 or len(raw.split()) > 3:
             continue
+        normalized = _normalize_skill(raw)
+        if not normalized:
+            continue
+        norm_lower = normalized.lower()
+        if norm_lower in known_lower or norm_lower in _EXCLUDED_SKILLS or norm_lower in seen:
+            continue
+        seen.add(norm_lower)
+        niche.append(normalized)
 
-        for line in result.strip().split('\n'):
-            if ':' not in line:
-                continue
-            skills_part = line.split(':', 1)[1]
-            skills = [
-                _normalize_skill(s)
-                for s in skills_part.split(',')
-                if s.strip()
-                and 1 < len(s.strip()) < 28
-                and s.strip().lower() not in _EXCLUDED_TERMS
-            ]
-            all_skills.extend(skills)
+    return niche
 
-    return Counter(all_skills)
 
 def extract_skills(descriptions: list[str]) -> SkillExtractionResult:
-    #extracts skills with accurate frequency counts across all descriptions
+    #hybrid extraction pipeline:
+    #  step 1: python regex scans ALL descriptions against 200-skill taxonomy (0 api calls)
+    #  step 2: groq reads a sample for niche skills not in taxonomy (1 api call)
+    #  step 3: python counts niche skills across ALL descriptions (0 api calls)
+    #  step 4: merge both counters
+    #total: 1 groq call, every description counted, deterministic frequency
     if not descriptions:
         return SkillExtractionResult(counts=Counter())
 
     capped = [_truncate_description(d) for d in descriptions[:MAX_DESCRIPTIONS]]
-    counts = _extract_skills_from_all(capped)
 
-    return SkillExtractionResult(counts=counts)
+    #step 1 — taxonomy scan, all descriptions, instant
+    taxonomy_counts = count_taxonomy_skills(capped)
+
+    #step 2 — groq discovers niche skills from a sample
+    sample = capped[:NICHE_SAMPLE_SIZE]
+    niche_skills = _discover_niche_skills(sample, set(taxonomy_counts.keys()))
+
+    #step 3 — python counts niche skills across all descriptions
+    niche_counts = count_specific_skills(capped, niche_skills)
+
+    #step 4 — merge
+    merged = taxonomy_counts + niche_counts
+
+    return SkillExtractionResult(counts=merged)
+
 
 def categorize_skills(skills: list[str]) -> dict | None:
-    #dynamically categorizes skills into standard groups
     if not skills:
         return None
 
     skills_str = ", ".join(skills)
-    prompt = f"""You are a job market analyst. Categorize these skills into logical groups.
-Use clear professional category names a recruiter would recognize.
-Good names: Programming, Data Analysis, Machine Learning, Cloud, Databases, Visualization, Statistics, Finance, Management.
-Bad names: Intelligence, Modeling, Computation, Cognition, Things.
-Return ONLY a valid JSON object. No markdown, no explanation, just raw JSON.
-Example: {{"Programming": ["Python", "Java"], "Data Analysis": ["SQL", "Excel"]}}
+    prompt = f"""Categorize these skills into logical groups.
+Use clear category names: Programming, Data Analysis, Cloud, Databases, Visualization, DevOps.
+Return ONLY valid JSON. No markdown. No explanation.
+Example: {{"Programming": ["Python", "Java"], "Data": ["SQL", "Excel"]}}
 
-Skills:
-{skills_str}"""
+Skills: {skills_str}"""
 
-    result = _call_groq(prompt, max_tokens=500)
+    result = _call_groq(prompt, max_tokens=400)
     if not result:
         return None
 
@@ -210,29 +200,33 @@ Skills:
         logger.error("groq returned malformed json for categorization")
         return None
 
-def generate_insight(query: str, top_skills: list[str]) -> InsightResult:
-    #2 sentence max — tight and actionable
-    skills_str = ", ".join(top_skills[:8])
-    prompt = f"""You are a job market analyst. Write exactly 2 sentences about the '{query}' job market.
-Base it on these top skills: {skills_str}.
-Be specific and actionable. No filler. No "in today's landscape". Don't start with I or As an AI."""
 
-    result = _call_groq(prompt, max_tokens=120)
-    return InsightResult(text=result)
+def generate_insight(query: str, top_skills: list[str]) -> InsightResult:
+    skills_str = ", ".join(top_skills[:8])
+    prompt = f"""Write exactly 2 sentences about the '{query}' job market based on these skills: {skills_str}.
+Sentence 1: what skills dominate. Sentence 2: what to focus on.
+Stop after the second period. No filler phrases. Don't start with I or As an AI."""
+
+    result = _call_groq(prompt, max_tokens=150)
+    if not result:
+        return InsightResult(text=None)
+
+    sentences = re.split(r'(?<=[.!?])\s+', result.strip())
+    capped = ' '.join(sentences[:2])
+    return InsightResult(text=capped)
+
 
 def suggest_soft_skills(query: str) -> list[str]:
-    #returns top soft skills for the role
     prompt = f"""List the {MAX_SOFT_SKILLS} most important soft skills for a '{query}' role.
 Return ONLY a comma separated list. No numbering, no explanation."""
 
-    result = _call_groq(prompt, max_tokens=60)
+    result = _call_groq(prompt, max_tokens=80)
     if not result:
         return []
     return [s.strip() for s in result.split(',') if s.strip()]
 
+
 def generate_roadmap(query: str, missing_skills: list[str], user_skills: list[str]) -> str | None:
-    #generates prioritized roadmap from precomputed skill gap
-    #missing_skills should come from compute_skill_gap to avoid recomputing the diff
     if not missing_skills:
         return "you already have all the top skills for this role. focus on deepening expertise and building projects."
 
@@ -243,14 +237,13 @@ def generate_roadmap(query: str, missing_skills: list[str], user_skills: list[st
 They know: {known_str}
 They are missing: {missing_str}
 Write exactly 5 steps. Each step is one sentence starting with Step N:.
-Do NOT repeat the step label inside the sentence — just write the sentence after "Step N:".
+Do NOT repeat the step label inside the sentence.
 Prioritize the most in-demand missing skills first. Nothing else."""
 
     return _call_groq(prompt, max_tokens=300)
 
+
 def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
-    #splits skills into must have, good to have, nice to have based on frequency
-    #frequency relative to other skills tells you priority
     if not counts:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
@@ -258,22 +251,20 @@ def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
 
     filtered = {}
     for skill, count in counts.items():
-        skill_clean = skill.strip().title()
-        skill_clean = ACRONYM_MAP.get(skill_clean, skill_clean)
-
-        if _is_role_noise(skill_clean.lower(), search_words):
+        if _is_role_noise(skill.lower(), search_words):
             continue
-
-        filtered[skill_clean] = count
+        if skill.lower() in _EXCLUDED_SKILLS:
+            continue
+        filtered[skill] = count
 
     if not filtered:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
     sorted_skills = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
-    total_skills = len(sorted_skills)
+    total = len(sorted_skills)
 
-    top_cut = max(1, total_skills // 3)
-    mid_cut = max(2, (total_skills * 2) // 3)
+    top_cut = max(1, total // 3)
+    mid_cut = max(2, (total * 2) // 3)
 
     must_have = [s for s, _ in sorted_skills[:top_cut]]
     good_to_have = [s for s, _ in sorted_skills[top_cut:mid_cut]]
@@ -282,11 +273,13 @@ def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
     return {
         "must_have": must_have[:8],
         "good_to_have": good_to_have[:8],
-        "nice_to_have": nice_to_have[:8]
+        "nice_to_have": nice_to_have[:8],
     }
 
+
 def run_ai_pipeline(query: str, descriptions: list[str]) -> tuple:
-    #runs skill extraction first then fires insight, soft skills, categorization in parallel
+    #hybrid extraction first (1 groq call), then 3 parallel groq calls
+    #total: 4 groq calls per search regardless of description count
     skill_result = extract_skills(descriptions)
 
     if skill_result.is_empty():
