@@ -8,8 +8,6 @@ from config import (
     GROQ_API_KEY,
     GROQ_MODEL,
     GROQ_TEMPERATURE,
-    GROQ_REASONING_EFFORT,
-    GROQ_REASONING_HEADROOM,
     DESCRIPTION_BATCH_SIZE,
     MAX_DESCRIPTIONS,
     MAX_SOFT_SKILLS,
@@ -93,21 +91,13 @@ class InsightResult:
 
 def _call_groq(prompt: str, max_tokens: int) -> str | None:
     #single groq call, returns none on failure
-    #gpt oss models spend part of the token budget on hidden reasoning, so the cap is
-    #raised by a fixed headroom and the effort is kept low
-    #max_tokens here means the budget for the visible answer
-    request = {
-        "model": GROQ_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens + GROQ_REASONING_HEADROOM,
-        "temperature": GROQ_TEMPERATURE,
-    }
-    if GROQ_MODEL.startswith("openai/gpt-oss"):
-        #reasoning_effort is only accepted by some models, other models would reject it
-        request["extra_body"] = {"reasoning_effort": GROQ_REASONING_EFFORT}
-
     try:
-        response = _client.chat.completions.create(**request)
+        response = _client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=GROQ_TEMPERATURE,
+        )
     except Exception as e:
         logger.error("groq call failed: %s", e)
         return None
@@ -115,7 +105,6 @@ def _call_groq(prompt: str, max_tokens: int) -> str | None:
     choice = response.choices[0]
     content = choice.message.content
     if not content or not content.strip():
-        #an empty answer is a failure, so it is logged instead of passing silently
         logger.warning("groq returned empty content (finish_reason=%s)", choice.finish_reason)
         return None
     return content.strip()
