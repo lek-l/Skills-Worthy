@@ -9,7 +9,6 @@ from config import (
     GROQ_MODEL,
     GROQ_TEMPERATURE,
     MAX_DESCRIPTIONS,
-    MAX_SOFT_SKILLS,
     ACRONYM_MAP,
     NICHE_SAMPLE_SIZE,
 )
@@ -17,10 +16,8 @@ from taxonomy import count_taxonomy_skills, count_specific_skills, TAXONOMY_NAME
 
 logger = logging.getLogger(__name__)
 
-#client built once at module level
 _client = Groq(api_key=GROQ_API_KEY)
 
-#skill name variations for normalizing groq output
 _SKILL_ALIASES = {
     'js': 'JavaScript', 'javascript': 'JavaScript', 'node': 'Node.js',
     'node.js': 'Node.js', 'nodejs': 'Node.js', 'react.js': 'React',
@@ -39,7 +36,6 @@ _SKILL_ALIASES = {
     'matlab': 'MATLAB', 'sas': 'SAS', 'spss': 'SPSS',
 }
 
-#terms to exclude even after normalization
 _EXCLUDED_SKILLS = {
     'ai', 'optimization', 'programming', 'analytics', 'reporting',
     'data', 'analysis', 'management', 'development', 'testing',
@@ -68,7 +64,6 @@ class InsightResult:
 
 
 def _call_groq(prompt: str, max_tokens: int) -> str | None:
-    #single groq call, returns none on failure or empty response
     try:
         response = _client.chat.completions.create(
             model=GROQ_MODEL,
@@ -95,7 +90,6 @@ def _truncate_description(description: str, max_chars: int = 600) -> str:
 
 
 def _normalize_skill(skill: str) -> str:
-    #collapse unicode spaces, strip punctuation, look up alias, fallback to title case with acronym fix
     cleaned = " ".join(skill.split()).strip('.-•*– ').strip()
     if not cleaned:
         return ""
@@ -112,9 +106,6 @@ def _is_role_noise(skill_lower: str, search_words: set) -> bool:
 
 
 def _discover_niche_skills(sample_descriptions: list[str], known_skills: set) -> list[str]:
-    #asks groq to find skills in a sample that the taxonomy missed
-    #returns only skills NOT already in the taxonomy — no duplicates
-    #this is the one groq call in the extraction pipeline
     combined = "\n---\n".join(sample_descriptions)
 
     prompt = f"""List every technical skill, tool, software, platform, or framework mentioned in these job postings.
@@ -126,7 +117,6 @@ Return ONLY a comma-separated list. Nothing else.
     if not result:
         return []
 
-    #normalize and filter — keep only skills the taxonomy doesn't already cover
     niche = []
     known_lower = {s.lower() for s in known_skills}
     seen = set()
@@ -152,10 +142,10 @@ def extract_skills(descriptions: list[str]) -> SkillExtractionResult:
 
     capped = descriptions[:MAX_DESCRIPTIONS]
 
-    #step 1 — taxonomy scans FULL descriptions, no truncation needed (regex, not LLM)
+    #step 1 — taxonomy scans full descriptions (regex, no tokens)
     taxonomy_counts = count_taxonomy_skills(capped)
 
-    #step 2 — groq only reads truncated sample (saves tokens)
+    #step 2 — groq discovers niche skills from truncated sample (saves tokens)
     sample = [_truncate_description(d) for d in capped[:NICHE_SAMPLE_SIZE]]
     niche_skills = _discover_niche_skills(sample, set(taxonomy_counts.keys()))
 
@@ -210,16 +200,6 @@ Stop after the second period. No filler phrases. Don't start with I or As an AI.
     return InsightResult(text=capped)
 
 
-def suggest_soft_skills(query: str) -> list[str]:
-    prompt = f"""List the {MAX_SOFT_SKILLS} most important soft skills for a '{query}' role.
-Return ONLY a comma separated list. No numbering, no explanation."""
-
-    result = _call_groq(prompt, max_tokens=80)
-    if not result:
-        return []
-    return [s.strip() for s in result.split(',') if s.strip()]
-
-
 def generate_roadmap(query: str, missing_skills: list[str], user_skills: list[str]) -> str | None:
     if not missing_skills:
         return "you already have all the top skills for this role. focus on deepening expertise and building projects."
@@ -237,8 +217,10 @@ Prioritize the most in-demand missing skills first. Nothing else."""
     return _call_groq(prompt, max_tokens=300)
 
 
-def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
-    if not counts:
+def compute_skill_tiers(counts: Counter, search_term: str, total_analyzed: int) -> dict:
+    #percentage-based thresholds — absolute, not relative
+    #50%+ means most employers want it, not just "higher than the others"
+    if not counts or total_analyzed == 0:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
     search_words = set(search_term.lower().split())
@@ -249,20 +231,17 @@ def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
             continue
         if skill.lower() in _EXCLUDED_SKILLS:
             continue
-        filtered[skill] = count
+        pct = (count / total_analyzed) * 100
+        filtered[skill] = pct
 
     if not filtered:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
     sorted_skills = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
-    total = len(sorted_skills)
 
-    top_cut = max(1, total // 3)
-    mid_cut = max(2, (total * 2) // 3)
-
-    must_have = [s for s, _ in sorted_skills[:top_cut]]
-    good_to_have = [s for s, _ in sorted_skills[top_cut:mid_cut]]
-    nice_to_have = [s for s, _ in sorted_skills[mid_cut:]]
+    must_have = [s for s, pct in sorted_skills if pct >= 50]
+    good_to_have = [s for s, pct in sorted_skills if 25 <= pct < 50]
+    nice_to_have = [s for s, pct in sorted_skills if pct < 25]
 
     return {
         "must_have": must_have[:8],
@@ -272,24 +251,23 @@ def compute_skill_tiers(counts: Counter, search_term: str) -> dict:
 
 
 def run_ai_pipeline(query: str, descriptions: list[str]) -> tuple:
-    #hybrid extraction first (1 groq call), then 3 parallel groq calls
-    #total: 4 groq calls per search regardless of description count
+    #hybrid extraction (1 groq call) then insight + categories in parallel (2 groq calls)
+    #total: 3 groq calls per search — soft skills removed (was generic, not from postings)
     skill_result = extract_skills(descriptions)
 
     if skill_result.is_empty():
-        return skill_result, None, InsightResult(text=None), [], {}
+        return skill_result, None, InsightResult(text=None), {}
 
+    total_analyzed = min(len(descriptions), MAX_DESCRIPTIONS)
     top_skills = [skill for skill, _ in skill_result.counts.most_common(20)]
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         insight_future = executor.submit(generate_insight, query, top_skills)
-        soft_skills_future = executor.submit(suggest_soft_skills, query)
         categories_future = executor.submit(categorize_skills, top_skills)
 
         insight = insight_future.result()
-        soft_skills = soft_skills_future.result()
         categories = categories_future.result()
 
-    tiers = compute_skill_tiers(skill_result.counts, query)
+    tiers = compute_skill_tiers(skill_result.counts, query, total_analyzed)
 
-    return skill_result, categories, insight, soft_skills, tiers
+    return skill_result, categories, insight, tiers

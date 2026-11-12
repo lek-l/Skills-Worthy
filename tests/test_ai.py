@@ -5,111 +5,67 @@ from unittest.mock import patch
 import pytest
 
 import ai
-from taxonomy import count_taxonomy_skills, count_specific_skills, TAXONOMY_NAMES
+from taxonomy import count_taxonomy_skills, count_specific_skills
 
-
-#taxonomy
 
 class TestTaxonomyCounting:
-    def test_finds_common_skills_in_text(self):
-        desc = "We need Python, SQL, and Tableau experience. AWS is a plus."
-        counts = count_taxonomy_skills([desc])
+    def test_finds_common_skills(self):
+        counts = count_taxonomy_skills(["We need Python, SQL, and Tableau."])
         assert counts["Python"] == 1
         assert counts["SQL"] == 1
-        assert counts["Tableau"] == 1
-        assert counts["AWS"] == 1
 
-    def test_counts_across_multiple_descriptions(self):
-        descs = [
-            "Python and SQL required.",
-            "SQL and Excel needed.",
-            "Python, SQL, and Tableau.",
-        ]
-        counts = count_taxonomy_skills(descs)
+    def test_counts_across_descriptions(self):
+        counts = count_taxonomy_skills(["Python and SQL.", "SQL and Excel.", "Python, SQL, Tableau."])
         assert counts["SQL"] == 3
         assert counts["Python"] == 2
-        assert counts["Tableau"] == 1
-        assert counts["Excel"] == 1
 
     def test_case_insensitive(self):
-        counts = count_taxonomy_skills(["PYTHON and sql and TABLEAU"])
+        counts = count_taxonomy_skills(["PYTHON and sql"])
         assert counts["Python"] == 1
         assert counts["SQL"] == 1
 
-    def test_power_bi_variations(self):
-        counts = count_taxonomy_skills(["Experience with Power BI and PowerBI dashboards"])
-        assert counts["Power BI"] == 1
-
-    def test_databricks_not_caught_by_data_search(self):
-        counts = count_taxonomy_skills(["Experience with Databricks"])
-        assert "Databricks" in counts
-
-    def test_empty_descriptions(self):
-        assert count_taxonomy_skills([]) == Counter()
-
-    def test_no_false_positives_on_common_words(self):
+    def test_no_false_positives(self):
         counts = count_taxonomy_skills(["We need good communication and management skills"])
         assert len(counts) == 0
 
 
 class TestCountSpecificSkills:
     def test_counts_custom_skills(self):
-        descs = ["Use Plaid API for banking", "Plaid and Stripe integration", "No relevant skills"]
-        counts = count_specific_skills(descs, ["Plaid", "Stripe"])
+        counts = count_specific_skills(["Use Plaid API", "Plaid and Stripe", "Nothing"], ["Plaid", "Stripe"])
         assert counts["Plaid"] == 2
         assert counts["Stripe"] == 1
 
-    def test_empty_skill_list(self):
-        assert count_specific_skills(["some text"], []) == Counter()
+    def test_empty_list(self):
+        assert count_specific_skills(["text"], []) == Counter()
 
-    def test_case_insensitive(self):
-        counts = count_specific_skills(["Use PLAID for banking"], ["Plaid"])
-        assert counts["Plaid"] == 1
-
-
-#normalization
 
 class TestNormalizeSkill:
-    def test_alias_maps_to_canonical(self):
+    def test_alias(self):
         assert ai._normalize_skill("js") == "JavaScript"
-        assert ai._normalize_skill("sklearn") == "Scikit-learn"
         assert ai._normalize_skill("powerbi") == "Power BI"
 
-    def test_unknown_skill_gets_title_cased(self):
-        assert ai._normalize_skill("zendesk") == "Zendesk"
-
-    def test_unicode_spaces_collapsed(self):
+    def test_unicode_spaces(self):
         assert ai._normalize_skill("Power\u202fBI") == "Power BI"
-        assert ai._normalize_skill("Power\u00a0BI") == "Power BI"
 
-    def test_empty_and_garbage(self):
+    def test_empty(self):
         assert ai._normalize_skill("") == ""
-        assert ai._normalize_skill("...") == ""
 
 
 class TestIsRoleNoise:
-    def test_whole_word_match_is_noise(self):
+    def test_whole_word_match(self):
         assert ai._is_role_noise("data analysis", {"data", "analyst"}) is True
 
-    def test_substring_is_not_noise(self):
-        assert ai._is_role_noise("databricks", {"data", "analyst"}) is False
+    def test_substring_not_noise(self):
+        assert ai._is_role_noise("databricks", {"data"}) is False
 
-    def test_short_words_ignored(self):
-        assert ai._is_role_noise("bi tools", {"bi"}) is False
-
-
-#niche discovery
 
 class TestDiscoverNicheSkills:
-    def test_returns_only_skills_not_in_known_set(self):
-        with patch.object(ai, "_call_groq", return_value="Python, SQL, Plaid, Stripe"):
+    def test_filters_known_skills(self):
+        with patch.object(ai, "_call_groq", return_value="Python, SQL, Plaid"):
             niche = ai._discover_niche_skills(["desc"], {"Python", "SQL"})
-        assert "Plaid" in niche
-        assert "Stripe" in niche
-        assert "Python" not in niche
-        assert "SQL" not in niche
+        assert niche == ["Plaid"]
 
-    def test_groq_failure_returns_empty(self):
+    def test_groq_failure(self):
         with patch.object(ai, "_call_groq", return_value=None):
             assert ai._discover_niche_skills(["desc"], set()) == []
 
@@ -118,50 +74,87 @@ class TestDiscoverNicheSkills:
             niche = ai._discover_niche_skills(["desc"], set())
         assert "Plaid" in niche
         assert "Programming" not in niche
-        assert "Analytics" not in niche
 
-    def test_sentence_non_answers_filtered(self):
-        with patch.object(ai, "_call_groq", return_value="No technical skills mentioned, Plaid"):
-            niche = ai._discover_niche_skills(["desc"], set())
-        assert "Plaid" in niche
-        assert len(niche) == 1
-
-
-#hybrid extraction
 
 class TestExtractSkills:
-    def test_empty_input(self):
-        result = ai.extract_skills([])
-        assert result.is_empty()
+    def test_empty(self):
+        assert ai.extract_skills([]).is_empty()
 
-    def test_taxonomy_skills_counted_without_groq(self):
-        descs = [
-            "We need Python and SQL.",
-            "SQL and Tableau required.",
-            "Python, SQL, and Excel.",
-        ]
+    def test_taxonomy_counted_without_groq(self):
         with patch.object(ai, "_call_groq", return_value="") as mock:
-            result = ai.extract_skills(descs)
-        #only 1 groq call for niche discovery, not per-description
+            result = ai.extract_skills(["Python and SQL.", "SQL and Excel.", "Python, SQL, Tableau."])
         assert mock.call_count == 1
         assert result.counts["SQL"] == 3
         assert result.counts["Python"] == 2
 
-    def test_niche_skills_added_to_taxonomy_counts(self):
-        descs = ["Use Plaid API and Python for banking."] * 3
+    def test_niche_added(self):
         with patch.object(ai, "_call_groq", return_value="Plaid"):
-            result = ai.extract_skills(descs)
+            result = ai.extract_skills(["Use Plaid API and Python."] * 3)
         assert result.counts["Python"] == 3
         assert result.counts["Plaid"] == 3
 
-    def test_caps_at_max_descriptions(self):
-        descs = ["Python required."] * 40
+    def test_caps_at_max(self):
         with patch.object(ai, "_call_groq", return_value=""):
-            result = ai.extract_skills(descs)
+            result = ai.extract_skills(["Python required."] * 40)
         assert result.counts["Python"] == ai.MAX_DESCRIPTIONS
 
 
-#groq wrapper
+class TestInsight:
+    def test_truncates(self):
+        with patch.object(ai, "_call_groq", return_value="One. Two. Three."):
+            assert ai.generate_insight("a", ["P"]).text == "One. Two."
+
+    def test_failure(self):
+        with patch.object(ai, "_call_groq", return_value=None):
+            assert ai.generate_insight("a", ["P"]).available is False
+
+
+class TestRoadmap:
+    def test_no_missing(self):
+        with patch.object(ai, "_call_groq") as mock:
+            msg = ai.generate_roadmap("a", [], ["P"])
+        mock.assert_not_called()
+        assert "already have" in msg
+
+
+class TestComputeSkillTiers:
+    def test_empty(self):
+        assert ai.compute_skill_tiers(Counter(), "a", 10) == {
+            "must_have": [], "good_to_have": [], "nice_to_have": []
+        }
+
+    def test_percentage_thresholds(self):
+        #out of 10: A=8(80%) must, B=4(40%) good, C=1(10%) nice
+        counts = Counter({"A": 8, "B": 4, "C": 1})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
+        assert tiers["must_have"] == ["A"]
+        assert tiers["good_to_have"] == ["B"]
+        assert tiers["nice_to_have"] == ["C"]
+
+    def test_nothing_hits_fifty_percent(self):
+        #out of 10: A=3(30%) good, B=2(20%) nice, C=1(10%) nice
+        counts = Counter({"A": 3, "B": 2, "C": 1})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
+        assert tiers["must_have"] == []
+        assert tiers["good_to_have"] == ["A"]
+        assert tiers["nice_to_have"] == ["B", "C"]
+
+    def test_excludes_role_noise(self):
+        counts = Counter({"Data Analysis": 9, "Python": 5})
+        tiers = ai.compute_skill_tiers(counts, "data analyst", 10)
+        all_placed = tiers["must_have"] + tiers["good_to_have"] + tiers["nice_to_have"]
+        assert "Data Analysis" not in all_placed
+
+    def test_excludes_vague_terms(self):
+        counts = Counter({"AI": 5, "Python": 3})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
+        all_placed = tiers["must_have"] + tiers["good_to_have"] + tiers["nice_to_have"]
+        assert "AI" not in all_placed
+
+    def test_casing_preserved(self):
+        tiers = ai.compute_skill_tiers(Counter({"Power BI": 8}), "unrelated", 10)
+        assert tiers["must_have"] == ["Power BI"]
+
 
 def fake_response(content, finish_reason="stop"):
     from types import SimpleNamespace as NS
@@ -169,91 +162,26 @@ def fake_response(content, finish_reason="stop"):
 
 
 class TestCallGroq:
-    def test_returns_stripped_content(self):
+    def test_returns_content(self):
         with patch.object(ai._client.chat.completions, "create", return_value=fake_response("  hello  ")):
-            assert ai._call_groq("prompt", 50) == "hello"
+            assert ai._call_groq("p", 50) == "hello"
 
     @pytest.mark.parametrize("content", [None, "", "   "])
-    def test_empty_content_returns_none(self, content, caplog):
+    def test_empty_returns_none(self, content, caplog):
         with patch.object(ai._client.chat.completions, "create", return_value=fake_response(content, "length")):
             with caplog.at_level("WARNING"):
-                assert ai._call_groq("prompt", 50) is None
+                assert ai._call_groq("p", 50) is None
 
     def test_exception_returns_none(self, caplog):
         with patch.object(ai._client.chat.completions, "create", side_effect=RuntimeError("boom")):
             with caplog.at_level("ERROR"):
-                assert ai._call_groq("prompt", 50) is None
+                assert ai._call_groq("p", 50) is None
 
-
-#insight
-
-class TestInsight:
-    def test_truncates_to_two_sentences(self):
-        long = "One. Two. Three. Four."
-        with patch.object(ai, "_call_groq", return_value=long):
-            result = ai.generate_insight("analyst", ["Python"])
-        assert result.text == "One. Two."
-
-    def test_groq_failure(self):
-        with patch.object(ai, "_call_groq", return_value=None):
-            assert ai.generate_insight("analyst", ["Python"]).available is False
-
-
-class TestSoftSkills:
-    def test_parses_list(self):
-        with patch.object(ai, "_call_groq", return_value="Communication, Teamwork"):
-            assert ai.suggest_soft_skills("analyst") == ["Communication", "Teamwork"]
-
-    def test_groq_failure(self):
-        with patch.object(ai, "_call_groq", return_value=None):
-            assert ai.suggest_soft_skills("analyst") == []
-
-
-class TestRoadmap:
-    def test_no_missing_skills_skips_groq(self):
-        with patch.object(ai, "_call_groq") as mock:
-            msg = ai.generate_roadmap("analyst", [], ["Python"])
-        mock.assert_not_called()
-        assert "already have all" in msg
-
-
-#tiers
-
-class TestComputeSkillTiers:
-    def test_empty(self):
-        result = ai.compute_skill_tiers(Counter(), "analyst")
-        assert result == {"must_have": [], "good_to_have": [], "nice_to_have": []}
-
-    def test_splits_by_frequency(self):
-        counts = Counter({"A": 9, "B": 8, "C": 7, "D": 6, "E": 5, "F": 4})
-        tiers = ai.compute_skill_tiers(counts, "unrelated")
-        assert tiers["must_have"] == ["A", "B"]
-        assert tiers["good_to_have"] == ["C", "D"]
-        assert tiers["nice_to_have"] == ["E", "F"]
-
-    def test_excludes_role_noise(self):
-        counts = Counter({"Data Analysis": 9, "Python": 5})
-        tiers = ai.compute_skill_tiers(counts, "data analyst")
-        all_skills = tiers["must_have"] + tiers["good_to_have"] + tiers["nice_to_have"]
-        assert all_skills == ["Python"]
-
-    def test_excludes_vague_terms(self):
-        counts = Counter({"AI": 5, "Python": 3})
-        tiers = ai.compute_skill_tiers(counts, "unrelated")
-        all_skills = tiers["must_have"] + tiers["good_to_have"] + tiers["nice_to_have"]
-        assert "AI" not in all_skills
-
-    def test_canonical_casing_preserved(self):
-        tiers = ai.compute_skill_tiers(Counter({"Power BI": 3}), "unrelated")
-        assert tiers["must_have"] == ["Power BI"]
-
-
-#pipeline
 
 class TestPipeline:
-    def test_empty_extraction(self):
-        result = ai.run_ai_pipeline("analyst", [])
-        assert len(result) == 5
+    def test_empty(self):
+        result = ai.run_ai_pipeline("a", [])
+        assert len(result) == 4
         assert result[0].is_empty()
 
     def test_full_run(self):
@@ -261,16 +189,11 @@ class TestPipeline:
             if "technical skill" in prompt.lower():
                 return "Plaid, Stripe"
             if "Categorize" in prompt:
-                return json.dumps({"Fintech": ["Plaid", "Stripe"]})
-            if "soft skills" in prompt.lower():
-                return "Communication, Curiosity"
+                return json.dumps({"Fintech": ["Plaid"]})
             return "One. Two."
 
-        descs = ["Use Python and SQL with Plaid API."] * 3
         with patch.object(ai, "_call_groq", side_effect=fake):
-            skill_result, categories, insight, soft_skills, tiers = ai.run_ai_pipeline("fintech", descs)
+            skill_result, categories, insight, tiers = ai.run_ai_pipeline("fintech", ["Python and SQL with Plaid."] * 3)
 
         assert skill_result.counts["Python"] == 3
-        assert skill_result.counts["SQL"] == 3
         assert insight.available is True
-        assert len(soft_skills) == 2

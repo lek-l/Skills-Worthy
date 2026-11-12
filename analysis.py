@@ -13,9 +13,6 @@ class ProcessedJobs:
 
 
 def process_jobs(jobs: list[dict], search_term: str) -> ProcessedJobs:
-    #extracts clean descriptions from raw api jobs
-    #requires ALL search words to appear in the title, not just one
-    #this prevents "data analyst" from matching "data engineer"
     descriptions = []
     search_words = search_term.lower().split()
 
@@ -27,7 +24,6 @@ def process_jobs(jobs: list[dict], search_term: str) -> ProcessedJobs:
 
         title_lower = job["title"].lower()
 
-        #full phrase match first, then all-words match
         if search_term.lower() not in title_lower:
             if not all(word in title_lower for word in search_words):
                 continue
@@ -40,10 +36,9 @@ def process_jobs(jobs: list[dict], search_term: str) -> ProcessedJobs:
     )
 
 
-def build_skill_dataframe(skill_counts: Counter, search_term: str) -> pd.DataFrame:
-    #skills arrive already normalized from _normalize_skill in ai.py
-    #no .title() call here — that was destroying canonical names like Power BI
-    #only applies acronym map as a safety net, filters, and ranks
+def build_skill_dataframe(skill_counts: Counter, search_term: str, total_analyzed: int) -> pd.DataFrame:
+    #builds the bar chart dataframe with percentage column
+    #pct = what fraction of scanned postings mention this skill
     search_words = set(search_term.lower().split())
 
     generic_terms = {
@@ -52,13 +47,11 @@ def build_skill_dataframe(skill_counts: Counter, search_term: str) -> pd.DataFra
         'None', 'N/A',
     }
 
-    #safety net — apply acronym map without .title()
     normalized = Counter()
     for skill, count in skill_counts.items():
         clean = ACRONYM_MAP.get(skill.strip(), skill.strip())
         normalized[clean] += count
 
-    #filter role noise using whole-word matching
     skill_words_cache = {}
     filtered = {}
     for skill, count in normalized.items():
@@ -78,10 +71,18 @@ def build_skill_dataframe(skill_counts: Counter, search_term: str) -> pd.DataFra
         filtered[skill] = count
 
     if not filtered:
-        return pd.DataFrame(columns=['skill', 'count'])
+        return pd.DataFrame(columns=['skill', 'count', 'pct'])
 
     top = Counter(filtered).most_common(TOP_SKILLS_COUNT)
-    return pd.DataFrame(top, columns=['skill', 'count'])
+    df = pd.DataFrame(top, columns=['skill', 'count'])
+
+    #percentage of postings that mention each skill
+    if total_analyzed > 0:
+        df['pct'] = (df['count'] / total_analyzed * 100).round(0).astype(int)
+    else:
+        df['pct'] = 0
+
+    return df
 
 
 def compute_skill_gap(top_skills: list[str], user_skills: list[str]) -> dict:
