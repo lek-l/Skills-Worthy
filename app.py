@@ -20,7 +20,6 @@ st.markdown("""
 
     :root {
         --bg:           #1a1d24;
-        --bg-mid:       #1e2129;
         --bg-card:      #22262f;
         --bg-surface:   #2a2e38;
         --text:         #f0f2f5;
@@ -29,7 +28,6 @@ st.markdown("""
         --ivory:        #e8d876;
         --ivory-dim:    #c9ba5e;
         --amber:        #c17f3a;
-        --amber-pale:   #2a1f10;
         --green-soft:   #5a9465;
         --green-pale:   #1a2e1f;
     }
@@ -44,8 +42,9 @@ st.markdown("""
     #MainMenu, footer, header { visibility: hidden; }
 
     .block-container {
-        padding: 0 !important;
-        max-width: 100% !important;
+        max-width: 780px !important;
+        margin: 0 auto !important;
+        padding: 0 2rem !important;
     }
 
     p, li {
@@ -55,22 +54,23 @@ st.markdown("""
         line-height: 1.75 !important;
     }
 
-    /* search input */
+    /* search input — minimal, just a bottom line */
     input[type="text"] {
-        background: var(--bg-card) !important;
+        background: transparent !important;
         border: none !important;
-        border-radius: 6px !important;
+        border-bottom: 1px solid var(--text-faint) !important;
+        border-radius: 0 !important;
         color: var(--text) !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 1rem !important;
-        padding: 0.85rem 1.25rem !important;
-        transition: background 0.3s ease, box-shadow 0.3s ease !important;
+        font-size: 0.95rem !important;
+        padding: 0.6rem 0 !important;
+        transition: border-color 0.3s ease !important;
         text-align: center !important;
     }
 
     input[type="text"]:focus {
-        background: var(--bg-surface) !important;
-        box-shadow: 0 0 0 1px rgba(232, 216, 118, 0.15), 0 2px 12px rgba(232, 216, 118, 0.06) !important;
+        border-bottom: 1px solid var(--ivory) !important;
+        box-shadow: none !important;
     }
 
     input[type="text"]::placeholder {
@@ -86,89 +86,83 @@ st.markdown("""
     .stTextInput { margin-top: 0 !important; }
     div[data-testid="column"] { padding: 0 0.5rem !important; }
 
-    .stSpinner > div { border-top-color: var(--ivory) !important; }
+    /* spinner centered */
+    .stSpinner { text-align: center !important; }
+    .stSpinner > div { border-top-color: var(--ivory) !important; margin: 0 auto !important; }
 
     .stWarning {
-        background: var(--amber-pale) !important;
+        background: rgba(193, 127, 58, 0.08) !important;
         border-radius: 4px !important;
         color: var(--amber) !important;
-        max-width: 700px !important;
-        margin: 0 auto !important;
     }
     .stWarning p { color: var(--amber) !important; }
 
     .stError {
-        background: #1f1212 !important;
+        background: rgba(217, 83, 79, 0.08) !important;
         border-radius: 4px !important;
-        max-width: 700px !important;
-        margin: 0 auto !important;
     }
 
     .js-plotly-plot .plotly .modebar { display: none !important; }
     .stPlotlyChart { background: transparent !important; }
 
+    /* hide sidebar */
+    section[data-testid="stSidebar"] { display: none !important; }
+
     /* hero */
     .hero {
-        padding: 6rem 2rem 4.5rem !important;
+        padding: 5rem 0 3.5rem !important;
         text-align: center !important;
     }
 
     h1.hero-title {
-        font-size: 3.2rem !important;
+        font-size: 3rem !important;
         font-weight: 700 !important;
         color: var(--text) !important;
         line-height: 1.15 !important;
-        margin: 0 0 0.6rem !important;
+        margin: 0 0 0.5rem !important;
         padding: 0 !important;
     }
 
     h1.hero-title span { color: var(--ivory) !important; }
 
     .hero-sub {
-        font-size: 0.92rem !important;
+        font-size: 0.88rem !important;
         color: var(--text-faint) !important;
-        margin-bottom: 2.5rem !important;
+        margin-bottom: 2rem !important;
         display: block !important;
     }
 
     .try-line {
-        font-size: 0.72rem !important;
+        font-size: 0.7rem !important;
         color: var(--text-faint) !important;
-        margin-top: 0.9rem !important;
+        margin-top: 0.75rem !important;
         text-align: center !important;
         display: block !important;
     }
 
     .try-line span { color: var(--ivory-dim) !important; }
 
-    /* content wrapper — everything results-related lives here */
-    .content-wrap {
-        max-width: 780px !important;
-        margin: 0 auto !important;
-        padding: 0 2rem !important;
-    }
-
     /* role header */
     .role-title {
-        font-size: 2rem !important;
+        font-size: 1.8rem !important;
         font-weight: 700 !important;
         color: var(--text) !important;
         text-align: center !important;
         padding-top: 2rem !important;
-        margin-bottom: 0.4rem !important;
+        margin-bottom: 0.3rem !important;
     }
 
     .stat-row {
         display: flex !important;
         justify-content: center !important;
-        gap: 3rem !important;
-        margin: 1rem 0 2.5rem !important;
+        gap: 2.5rem !important;
+        margin: 0.8rem 0 0 !important;
     }
 
     .stat-block { text-align: center !important; }
 
     .stat-number {
-        font-size: 1.8rem !important;
+        font-size: 1.6rem !important;
         font-weight: 700 !important;
         color: var(--ivory) !important;
         line-height: 1 !important;
@@ -176,45 +170,28 @@ st.markdown("""
     }
 
     .stat-label {
-        font-size: 0.62rem !important;
+        font-size: 0.6rem !important;
         font-weight: 500 !important;
         color: var(--text-faint) !important;
-        margin-top: 0.3rem !important;
+        margin-top: 0.25rem !important;
         display: block !important;
     }
 
-    /* section cards — each section is a subtle card with breathing room */
-    .section-card {
-        background: var(--bg-mid) !important;
-        border-radius: 8px !important;
-        padding: 2.5rem 2.5rem !important;
-        margin: 1.25rem 0 !important;
-    }
-
-    .section-heading {
-        font-size: 0.88rem !important;
+    /* section headings — ivory, visible, clear hierarchy */
+    .s-heading {
+        font-size: 1.1rem !important;
         font-weight: 600 !important;
-        color: var(--text) !important;
-        margin-bottom: 1.5rem !important;
+        color: var(--ivory) !important;
+        margin: 3.5rem 0 1.25rem !important;
         display: block !important;
         text-align: center !important;
-    }
-
-    /* insight */
-    .insight-text {
-        font-size: 0.92rem !important;
-        color: var(--text-muted) !important;
-        line-height: 1.85 !important;
-        text-align: left !important;
-        max-width: 580px !important;
-        margin: 0 auto !important;
     }
 
     /* tiers */
     .tier-col-label {
         font-size: 0.68rem !important;
         font-weight: 600 !important;
-        margin-bottom: 0.7rem !important;
+        margin-bottom: 0.6rem !important;
         display: block !important;
         text-align: center !important;
     }
@@ -224,7 +201,7 @@ st.markdown("""
     .tier-label-nice { color: var(--text-faint) !important; }
 
     .tier-skill {
-        padding: 0.45rem 0.7rem !important;
+        padding: 0.4rem 0.65rem !important;
         margin: 0.2rem 0 !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-size: 0.8rem !important;
@@ -234,10 +211,7 @@ st.markdown("""
         background: var(--bg-card) !important;
         color: var(--text-muted) !important;
         border-radius: 4px !important;
-        transition: background 0.2s ease !important;
     }
-
-    .tier-skill:hover { background: var(--bg-surface) !important; }
 
     .tier-empty {
         font-size: 0.78rem !important;
@@ -248,8 +222,8 @@ st.markdown("""
 
     /* skill gap */
     .overlap-wrap {
-        max-width: 480px !important;
-        margin: 0 auto 1.5rem !important;
+        max-width: 460px !important;
+        margin: 0 auto 1.25rem !important;
         text-align: left !important;
     }
 
@@ -257,7 +231,7 @@ st.markdown("""
         font-size: 0.68rem !important;
         font-weight: 500 !important;
         color: var(--text-faint) !important;
-        margin-bottom: 0.4rem !important;
+        margin-bottom: 0.35rem !important;
         display: block !important;
     }
 
@@ -277,7 +251,7 @@ st.markdown("""
         font-size: 0.68rem !important;
         font-weight: 500 !important;
         color: var(--text-faint) !important;
-        margin: 1.25rem 0 0.4rem !important;
+        margin: 1.25rem 0 0.35rem !important;
         display: block !important;
         text-align: center !important;
     }
@@ -287,7 +261,7 @@ st.markdown("""
         font-size: 0.85rem !important;
         line-height: 1.8 !important;
         text-align: center !important;
-        max-width: 480px !important;
+        max-width: 460px !important;
         margin: 0 auto !important;
     }
 
@@ -298,35 +272,45 @@ st.markdown("""
         display: inline-block !important;
         font-size: 0.68rem !important;
         font-weight: 500 !important;
-        padding: 0.25rem 0.7rem !important;
+        padding: 0.2rem 0.6rem !important;
         background: var(--green-pale) !important;
         color: var(--green-soft) !important;
-        border-radius: 4px !important;
-        margin-bottom: 0.75rem !important;
+        border-radius: 3px !important;
+        margin-bottom: 0.5rem !important;
     }
 
     .roadmap-step {
-        padding: 0.65rem 0.9rem !important;
+        padding: 0.55rem 0.85rem !important;
         margin: 0.2rem auto !important;
         background: var(--bg-card) !important;
         border-radius: 4px !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.83rem !important;
+        font-size: 0.82rem !important;
         color: var(--text-muted) !important;
         line-height: 1.7 !important;
         text-align: left !important;
-        max-width: 480px !important;
+        max-width: 460px !important;
         display: block !important;
+    }
+
+    /* insight */
+    .insight-text {
+        font-size: 0.9rem !important;
+        color: var(--text-muted) !important;
+        line-height: 1.85 !important;
+        text-align: left !important;
+        max-width: 560px !important;
+        margin: 0 auto !important;
     }
 
     /* footer */
     .app-footer {
         text-align: center !important;
-        padding: 3rem 2rem 2rem !important;
-        font-size: 0.72rem !important;
+        padding: 3rem 0 2rem !important;
+        font-size: 0.7rem !important;
         color: var(--text-faint) !important;
-        margin-top: 3rem !important;
-        line-height: 2.2 !important;
+        margin-top: 4rem !important;
+        line-height: 2 !important;
     }
 
     .app-footer a {
@@ -335,9 +319,6 @@ st.markdown("""
     }
 
     .app-footer a:hover { text-decoration: underline !important; }
-
-    /* hide sidebar completely */
-    section[data-testid="stSidebar"] { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -422,7 +403,7 @@ def _render_skill_gap(gap: dict, search_term: str, missing_skills: list, user_sk
 
     if gap["is_strong_match"]:
         st.markdown(
-            "<div style='text-align:center; margin-bottom:0.75rem;'><span class='strong-match'>Strong match</span></div>",
+            "<div style='text-align:center; margin-bottom:0.5rem;'><span class='strong-match'>Strong match</span></div>",
             unsafe_allow_html=True
         )
 
@@ -459,8 +440,8 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-#search bar — wide with visible background so users know where to type
-_, search_col, _ = st.columns([1, 2.5, 1])
+#search bar
+_, search_col, _ = st.columns([1.5, 2, 1.5])
 with search_col:
     search_term = st.text_input("search", label_visibility="collapsed", placeholder="data analyst, accountant, marketing manager...")
     st.markdown(
@@ -543,9 +524,6 @@ tiers = results["tiers"]
 total_analyzed = min(len(processed.descriptions), MAX_DESCRIPTIONS)
 skill_df = build_skill_dataframe(skill_result.counts, search_term_clean, total_analyzed)
 
-#results — everything inside content-wrap for consistent margins
-st.markdown("<div class='content-wrap'>", unsafe_allow_html=True)
-
 #role header and stats
 st.markdown(f"""
     <div class='role-title'>{escape(search_term_clean.title())}</div>
@@ -565,53 +543,30 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
-
 #section 1 — bar chart
 if not skill_df.empty:
-    st.markdown("<div class='content-wrap'>", unsafe_allow_html=True)
     if len(skill_df) < 3:
+        st.markdown("<span class='s-heading'>Top in-demand skills</span>", unsafe_allow_html=True)
         st.markdown(
-            "<div class='section-card'>"
-            "<span class='section-heading'>Top in-demand skills</span>"
             "<p style='text-align:center; color:#4a5060; font-size:0.85rem;'>"
             "not enough skills found — try a more specific role like "
             f"<span style='color:#e8d876;'>{escape(search_term_clean)} analyst</span> or "
-            f"<span style='color:#e8d876;'>{escape(search_term_clean)} engineer</span></p>"
-            "</div>",
+            f"<span style='color:#e8d876;'>{escape(search_term_clean)} engineer</span></p>",
             unsafe_allow_html=True
         )
     else:
-        st.markdown(
-            "<div class='section-card'>"
-            "<span class='section-heading'>Top in-demand skills</span>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<span class='s-heading'>Top in-demand skills</span>", unsafe_allow_html=True)
         _render_bar_chart(skill_df)
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 #section 2 — skill priority tiers
 if tiers and any(tiers.values()):
-    st.markdown("<div class='content-wrap'>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='section-card'>"
-        "<span class='section-heading'>Skill priority</span>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<span class='s-heading'>Skill priority</span>", unsafe_allow_html=True)
     _render_tiers(tiers)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-#section 3 — skill gap and roadmap
-st.markdown("<div class='content-wrap'>", unsafe_allow_html=True)
-st.markdown(
-    "<div class='section-card'>"
-    "<span class='section-heading'>Skill gap</span>",
-    unsafe_allow_html=True
-)
+#section 3 — skill gap
+st.markdown("<span class='s-heading'>Skill gap</span>", unsafe_allow_html=True)
 
-_, skills_col, _ = st.columns([1, 2.5, 1])
+_, skills_col, _ = st.columns([1.5, 2, 1.5])
 with skills_col:
     user_skills_input = st.text_input("your skills", label_visibility="collapsed", placeholder="Python, SQL, Excel...")
 
@@ -623,20 +578,10 @@ if user_skills_input:
         gap = compute_skill_gap(top_skills, user_skills)
         _render_skill_gap(gap, search_term_clean, gap["missing"], user_skills)
 
-st.markdown("</div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-#section 4 — ai insight
+#section 4 — insight
 if insight and insight.available:
-    st.markdown("<div class='content-wrap'>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='section-card'>"
-        "<span class='section-heading'>Market insight</span>"
-        f"<p class='insight-text'>{escape(insight.text)}</p>"
-        "</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<span class='s-heading'>Market insight</span>", unsafe_allow_html=True)
+    st.markdown(f"<p class='insight-text'>{escape(insight.text)}</p>", unsafe_allow_html=True)
 
 #footer
 st.markdown("""

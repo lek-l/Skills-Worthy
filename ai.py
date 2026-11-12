@@ -239,9 +239,9 @@ def compute_skill_tiers(counts: Counter, search_term: str, total_analyzed: int) 
 
     sorted_skills = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
 
-    must_have = [s for s, pct in sorted_skills if pct >= 50]
-    good_to_have = [s for s, pct in sorted_skills if 25 <= pct < 50]
-    nice_to_have = [s for s, pct in sorted_skills if pct < 25]
+    must_have = [s for s, pct in sorted_skills if pct >= 30]
+    good_to_have = [s for s, pct in sorted_skills if 15 <= pct < 30]
+    nice_to_have = [s for s, pct in sorted_skills if pct < 15]
 
     return {
         "must_have": must_have[:8],
