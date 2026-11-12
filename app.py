@@ -42,9 +42,9 @@ st.markdown("""
     #MainMenu, footer, header { visibility: hidden; }
 
     .block-container {
-        max-width: 780px !important;
+        max-width: 1060px !important;
         margin: 0 auto !important;
-        padding: 0 2rem !important;
+        padding: 0 2.5rem !important;
     }
 
     p, li {
@@ -54,7 +54,7 @@ st.markdown("""
         line-height: 1.75 !important;
     }
 
-    /* search input — minimal, just a bottom line */
+    /* search input */
     input[type="text"] {
         background: transparent !important;
         border: none !important;
@@ -84,7 +84,7 @@ st.markdown("""
     .stTextInput > div { background: transparent !important; }
     div[data-baseweb="input"] { background: transparent !important; border: none !important; }
     .stTextInput { margin-top: 0 !important; }
-    div[data-testid="column"] { padding: 0 0.5rem !important; }
+    div[data-testid="column"] { padding: 0 0.75rem !important; }
 
     /* spinner centered */
     .stSpinner { text-align: center !important; }
@@ -177,23 +177,29 @@ st.markdown("""
         display: block !important;
     }
 
-    /* section headings — ivory, visible, clear hierarchy */
+    /* section headings */
     .s-heading {
-        font-size: 1.1rem !important;
+        font-size: 1.05rem !important;
         font-weight: 600 !important;
         color: var(--ivory) !important;
-        margin: 3.5rem 0 1.25rem !important;
+        margin: 3rem 0 1.25rem !important;
         display: block !important;
-        text-align: center !important;
+    }
+
+    .s-heading-inline {
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+        color: var(--ivory) !important;
+        margin: 0 0 1.25rem !important;
+        display: block !important;
     }
 
     /* tiers */
     .tier-col-label {
         font-size: 0.68rem !important;
         font-weight: 600 !important;
-        margin-bottom: 0.6rem !important;
+        margin-bottom: 0.5rem !important;
         display: block !important;
-        text-align: center !important;
     }
 
     .tier-label-must { color: var(--ivory) !important; }
@@ -201,10 +207,10 @@ st.markdown("""
     .tier-label-nice { color: var(--text-faint) !important; }
 
     .tier-skill {
-        padding: 0.4rem 0.65rem !important;
+        padding: 0.4rem 0.6rem !important;
         margin: 0.2rem 0 !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.8rem !important;
+        font-size: 0.78rem !important;
         font-weight: 500 !important;
         display: block !important;
         text-align: left !important;
@@ -214,16 +220,15 @@ st.markdown("""
     }
 
     .tier-empty {
-        font-size: 0.78rem !important;
+        font-size: 0.75rem !important;
         color: var(--text-faint) !important;
-        text-align: center !important;
         padding: 0.5rem 0 !important;
     }
 
     /* skill gap */
     .overlap-wrap {
-        max-width: 460px !important;
-        margin: 0 auto 1.25rem !important;
+        max-width: 100% !important;
+        margin: 0 0 1rem !important;
         text-align: left !important;
     }
 
@@ -251,18 +256,14 @@ st.markdown("""
         font-size: 0.68rem !important;
         font-weight: 500 !important;
         color: var(--text-faint) !important;
-        margin: 1.25rem 0 0.35rem !important;
+        margin: 1rem 0 0.3rem !important;
         display: block !important;
-        text-align: center !important;
     }
 
     .skill-list {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.85rem !important;
+        font-size: 0.83rem !important;
         line-height: 1.8 !important;
-        text-align: center !important;
-        max-width: 460px !important;
-        margin: 0 auto !important;
     }
 
     .skill-matched { color: var(--green-soft) !important; }
@@ -280,27 +281,24 @@ st.markdown("""
     }
 
     .roadmap-step {
-        padding: 0.55rem 0.85rem !important;
-        margin: 0.2rem auto !important;
+        padding: 0.5rem 0.75rem !important;
+        margin: 0.2rem 0 !important;
         background: var(--bg-card) !important;
         border-radius: 4px !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.82rem !important;
+        font-size: 0.8rem !important;
         color: var(--text-muted) !important;
         line-height: 1.7 !important;
         text-align: left !important;
-        max-width: 460px !important;
         display: block !important;
     }
 
     /* insight */
     .insight-text {
-        font-size: 0.9rem !important;
+        font-size: 0.88rem !important;
         color: var(--text-muted) !important;
         line-height: 1.85 !important;
         text-align: left !important;
-        max-width: 560px !important;
-        margin: 0 auto !important;
     }
 
     /* footer */
@@ -339,45 +337,30 @@ def _render_bar_chart(skill_df):
         yaxis_title='',
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Plus Jakarta Sans', color='#8a9099', size=12),
+        font=dict(family='Plus Jakarta Sans', color='#8a9099', size=11),
         coloraxis_showscale=False,
-        margin=dict(l=0, r=20, t=0, b=0),
+        margin=dict(l=0, r=10, t=0, b=0),
         xaxis=dict(gridcolor='#2a2e38', zerolinecolor='#2a2e38', range=[0, 100]),
-        height=460
+        height=420
     )
     fig.update_traces(marker_line_width=0)
     st.plotly_chart(fig, use_container_width=True)
 
-def _render_tiers(tiers: dict):
-    must = tiers.get("must_have", [])
-    good = tiers.get("good_to_have", [])
-    nice = tiers.get("nice_to_have", [])
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        st.markdown("<span class='tier-col-label tier-label-must'>Must have</span>", unsafe_allow_html=True)
-        if must:
-            for s in must:
-                st.markdown(f"<div class='tier-skill'>{escape(s)}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='tier-empty'>no single skill dominates</div>", unsafe_allow_html=True)
-
-    with c2:
-        st.markdown("<span class='tier-col-label tier-label-good'>Good to have</span>", unsafe_allow_html=True)
-        if good:
-            for s in good:
+def _render_tiers_stacked(tiers: dict):
+    #renders all three tiers vertically in a single column
+    for label, key, color_class in [
+        ("Must have", "must_have", "tier-label-must"),
+        ("Good to have", "good_to_have", "tier-label-good"),
+        ("Nice to have", "nice_to_have", "tier-label-nice"),
+    ]:
+        skills = tiers.get(key, [])
+        st.markdown(f"<span class='tier-col-label {color_class}'>{label}</span>", unsafe_allow_html=True)
+        if skills:
+            for s in skills:
                 st.markdown(f"<div class='tier-skill'>{escape(s)}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='tier-empty'>—</div>", unsafe_allow_html=True)
-
-    with c3:
-        st.markdown("<span class='tier-col-label tier-label-nice'>Nice to have</span>", unsafe_allow_html=True)
-        if nice:
-            for s in nice:
-                st.markdown(f"<div class='tier-skill'>{escape(s)}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='tier-empty'>—</div>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
 def _clean_roadmap_steps(roadmap: str) -> list[str]:
     steps = []
@@ -402,10 +385,7 @@ def _render_skill_gap(gap: dict, search_term: str, missing_skills: list, user_sk
     )
 
     if gap["is_strong_match"]:
-        st.markdown(
-            "<div style='text-align:center; margin-bottom:0.5rem;'><span class='strong-match'>Strong match</span></div>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<span class='strong-match'>Strong match</span>", unsafe_allow_html=True)
 
     if matched:
         st.markdown("<span class='gap-label'>Skills you have</span>", unsafe_allow_html=True)
@@ -543,52 +523,57 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-#section 1 — bar chart
-if not skill_df.empty:
-    if len(skill_df) < 3:
-        st.markdown("<span class='s-heading'>Top in-demand skills</span>", unsafe_allow_html=True)
-        st.markdown(
-            "<p style='text-align:center; color:#4a5060; font-size:0.85rem;'>"
-            "not enough skills found — try a more specific role like "
-            f"<span style='color:#e8d876;'>{escape(search_term_clean)} analyst</span> or "
-            f"<span style='color:#e8d876;'>{escape(search_term_clean)} engineer</span></p>",
-            unsafe_allow_html=True
-        )
-    else:
-        st.markdown("<span class='s-heading'>Top in-demand skills</span>", unsafe_allow_html=True)
+#row 1 — bar chart (left) + skill priority tiers (right)
+st.markdown("<span class='s-heading' style='text-align:center;'>Top in-demand skills</span>", unsafe_allow_html=True)
+
+if not skill_df.empty and len(skill_df) >= 3:
+    chart_col, tier_col = st.columns([3, 1.5])
+
+    with chart_col:
         _render_bar_chart(skill_df)
 
-#section 2 — skill priority tiers
-if tiers and any(tiers.values()):
-    st.markdown("<span class='s-heading'>Skill priority</span>", unsafe_allow_html=True)
-    _render_tiers(tiers)
+    with tier_col:
+        st.markdown("<span class='s-heading-inline'>Skill priority</span>", unsafe_allow_html=True)
+        if tiers and any(tiers.values()):
+            _render_tiers_stacked(tiers)
+        else:
+            st.markdown("<p style='color:#4a5060; font-size:0.82rem;'>not enough data to rank priorities</p>", unsafe_allow_html=True)
 
-#section 3 — skill gap
-st.markdown("<span class='s-heading'>Skill gap</span>", unsafe_allow_html=True)
+elif not skill_df.empty:
+    st.markdown(
+        "<p style='text-align:center; color:#4a5060; font-size:0.85rem;'>"
+        "not enough skills found — try a more specific role like "
+        f"<span style='color:#e8d876;'>{escape(search_term_clean)} analyst</span> or "
+        f"<span style='color:#e8d876;'>{escape(search_term_clean)} engineer</span></p>",
+        unsafe_allow_html=True
+    )
 
-_, skills_col, _ = st.columns([1.5, 2, 1.5])
-with skills_col:
+#row 2 — skill gap (left) + market insight (right)
+gap_col, insight_col = st.columns([3, 2])
+
+with gap_col:
+    st.markdown("<span class='s-heading-inline' style='margin-top:3rem;'>Skill gap</span>", unsafe_allow_html=True)
     user_skills_input = st.text_input("your skills", label_visibility="collapsed", placeholder="Python, SQL, Excel...")
 
-if user_skills_input:
-    user_skills = [s.strip() for s in user_skills_input.split(',') if s.strip()]
-    if not user_skills:
-        st.warning("please enter at least one skill.")
-    else:
-        gap = compute_skill_gap(top_skills, user_skills)
-        _render_skill_gap(gap, search_term_clean, gap["missing"], user_skills)
+    if user_skills_input:
+        user_skills = [s.strip() for s in user_skills_input.split(',') if s.strip()]
+        if not user_skills:
+            st.warning("please enter at least one skill.")
+        else:
+            gap = compute_skill_gap(top_skills, user_skills)
+            _render_skill_gap(gap, search_term_clean, gap["missing"], user_skills)
 
-#section 4 — insight
-if insight and insight.available:
-    st.markdown("<span class='s-heading'>Market insight</span>", unsafe_allow_html=True)
-    st.markdown(f"<p class='insight-text'>{escape(insight.text)}</p>", unsafe_allow_html=True)
+with insight_col:
+    if insight and insight.available:
+        st.markdown("<span class='s-heading-inline' style='margin-top:3rem;'>Market insight</span>", unsafe_allow_html=True)
+        st.markdown(f"<p class='insight-text'>{escape(insight.text)}</p>", unsafe_allow_html=True)
 
 #footer
 st.markdown("""
     <div class='app-footer'>
         <a href='https://github.com/lek-l/Skills-Worthy' target='_blank'>GitHub</a>
         &nbsp;&middot;&nbsp;
-        <a href='https://www.linkedin.com/in/lekha-londhe/' target='_blank'>LinkedIn</a>
+        <a href='https://linkedin.com/in/lekha-londhe' target='_blank'>LinkedIn</a>
         <br>
         Searches are not stored. Descriptions are sent to Groq for analysis.
     </div>
