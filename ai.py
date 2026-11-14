@@ -16,7 +16,15 @@ from taxonomy import count_taxonomy_skills, count_specific_skills, TAXONOMY_NAME
 
 logger = logging.getLogger(__name__)
 
-_client = Groq(api_key=GROQ_API_KEY)
+#built lazily so a missing key degrades AI features instead of crashing the app at import
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None and GROQ_API_KEY:
+        _client = Groq(api_key=GROQ_API_KEY)
+    return _client
 
 _SKILL_ALIASES = {
     'js': 'JavaScript', 'javascript': 'JavaScript', 'node': 'Node.js',
@@ -64,8 +72,12 @@ class InsightResult:
 
 
 def _call_groq(prompt: str, max_tokens: int) -> str | None:
+    client = _get_client()
+    if client is None:
+        logger.warning("groq api key not configured, skipping ai call")
+        return None
     try:
-        response = _client.chat.completions.create(
+        response = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
@@ -75,6 +87,9 @@ def _call_groq(prompt: str, max_tokens: int) -> str | None:
         logger.error("groq call failed: %s", e)
         return None
 
+    if not response.choices:
+        logger.warning("groq returned no choices")
+        return None
     choice = response.choices[0]
     content = choice.message.content
     if not content or not content.strip():

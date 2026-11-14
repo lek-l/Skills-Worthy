@@ -5,13 +5,29 @@ import streamlit as st
 import plotly.express as px
 import state
 from api import fetch_jobs, JobFetchError
-from analysis import process_jobs, build_skill_dataframe, compute_skill_gap
+from analysis import process_jobs, build_skill_dataframe, compute_skill_gap, parse_roadmap_steps
 from ai import run_ai_pipeline, generate_roadmap
 from config import MIN_SEARCH_LENGTH, MAX_SEARCH_LENGTH, MAX_MISSING_SKILLS_SHOWN, MAX_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(page_title="Skills Worthy — Live Job Market Intelligence", layout="wide")
+MAX_USER_SKILLS = 30
+MAX_USER_SKILLS_CHARS = 500
+
+
+#shared across sessions: the same role searched twice within an hour costs one api round-trip
+#exceptions (JobFetchError) are not cached, so failures retry on the next search
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
+def _cached_fetch_jobs(query_key: str) -> list:
+    return fetch_jobs(query_key)
+
+
+TRENDING_ROLES = [
+    "Data Analyst", "Software Engineer", "Product Manager", "Accountant",
+    "UX Designer", "Cloud Engineer", "Nurse", "Marketing Manager",
+]
+
+st.set_page_config(page_title="Skills Worthy", layout="wide")
 state.initialize()
 
 st.markdown("""
@@ -42,7 +58,7 @@ st.markdown("""
     #MainMenu, footer, header { visibility: hidden; }
 
     .block-container {
-        max-width: 1060px !important;
+        max-width: 1100px !important;
         margin: 0 auto !important;
         padding: 0 2.5rem !important;
     }
@@ -79,12 +95,109 @@ st.markdown("""
     }
 
     small, .stTextInput small { display: none !important; }
+    [data-testid="InputInstructions"] { display: none !important; }
+
+    /* pill search bar (home search only) */
+    .st-key-hero_search {
+        background: var(--bg-surface) !important;
+        border: 1px solid rgba(255, 255, 255, 0.06) !important;
+        border-radius: 999px !important;
+        padding: 0.35rem 0.35rem 0.35rem 1.6rem !important;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35) !important;
+        transition: border-color 0.2s ease !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+    }
+    .st-key-hero_search:focus-within {
+        border-color: rgba(232, 216, 118, 0.45) !important;
+    }
+    .st-key-hero_search .stTextInput { flex: 1 1 auto !important; min-width: 0 !important; }
+
+    /* trending role chips */
+    .trending-label {
+        text-align: center !important;
+        font-size: 0.7rem !important;
+        letter-spacing: 0.12em !important;
+        text-transform: uppercase !important;
+        color: var(--text-muted) !important;
+        margin: 1.6rem 0 0.6rem !important;
+    }
+    .st-key-trending { max-width: 720px !important; margin: 0 auto !important; flex-wrap: wrap !important; }
+    .st-key-trending .stButton button {
+        background: transparent !important;
+        border: 1px solid rgba(255, 255, 255, 0.10) !important;
+        border-radius: 999px !important;
+        color: var(--text-muted) !important;
+        font-size: 0.8rem !important;
+        padding: 0.3rem 0.95rem !important;
+        min-height: 0 !important;
+        transition: all 0.2s ease !important;
+    }
+    .st-key-trending .stButton button p { font-size: 0.8rem !important; color: inherit !important; margin: 0 !important; }
+    .st-key-trending .stButton button:hover {
+        border-color: var(--ivory) !important;
+        color: var(--ivory) !important;
+        background: rgba(232, 216, 118, 0.06) !important;
+    }
+
+    /* how it works row (landing only) */
+    .how-row {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 1.25rem !important;
+        max-width: 860px !important;
+        margin: 3rem auto 2rem !important;
+    }
+    .how-step {
+        background: var(--bg-card) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1.4rem 1.4rem 1.5rem !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.35rem !important;
+    }
+    .how-num { color: var(--ivory) !important; font-size: 0.75rem !important; font-weight: 600 !important; letter-spacing: 0.1em !important; }
+    .how-title { color: var(--text) !important; font-size: 1rem !important; font-weight: 600 !important; }
+    .how-text { color: var(--text-muted) !important; font-size: 0.85rem !important; line-height: 1.6 !important; }
+    @media (max-width: 720px) {
+        .how-row { grid-template-columns: 1fr !important; margin-top: 2.5rem !important; }
+    }
+    .st-key-hero_search input[type="text"] {
+        border: none !important;
+        color: var(--text) !important;
+        font-weight: 500 !important;
+        font-size: 1.05rem !important;
+        text-align: left !important;
+        padding: 0.5rem 0 !important;
+        caret-color: var(--ivory) !important;
+    }
+    .st-key-hero_search input[type="text"]:focus { border: none !important; }
+    .st-key-hero_search input[type="text"]::placeholder {
+        color: var(--text-muted) !important;
+        opacity: 1 !important;
+        text-align: left !important;
+    }
+    .st-key-hero_search .stButton button {
+        width: 3.2rem !important;
+        height: 3.2rem !important;
+        min-height: 3.2rem !important;
+        border-radius: 50% !important;
+        padding: 0 !important;
+        background: var(--ivory) !important;
+        border: none !important;
+        color: var(--bg) !important;
+        box-shadow: -8px 0 16px rgba(0, 0, 0, 0.3) !important;
+        transition: transform 0.15s ease !important;
+    }
+    .st-key-hero_search .stButton button:hover { transform: scale(1.05) !important; background: var(--ivory-dim) !important; color: var(--bg) !important; }
+    .st-key-hero_search .stButton button span[data-testid="stIconMaterial"] { font-size: 1.5rem !important; }
     .stTextInput label { display: none !important; }
     .stTextInput > div > div { border: none !important; background: transparent !important; padding: 0 !important; }
     .stTextInput > div { background: transparent !important; }
     div[data-baseweb="input"] { background: transparent !important; border: none !important; }
     .stTextInput { margin-top: 0 !important; }
-    div[data-testid="column"] { padding: 0 0.75rem !important; }
+    div[data-testid="column"] { padding: 0 0.5rem !important; }
 
     /* spinner centered */
     .stSpinner { text-align: center !important; }
@@ -105,13 +218,62 @@ st.markdown("""
     .js-plotly-plot .plotly .modebar { display: none !important; }
     .stPlotlyChart { background: transparent !important; }
 
-    /* hide sidebar */
     section[data-testid="stSidebar"] { display: none !important; }
+
+    /* tabs styling */
+    /* tabs: segmented pill, same shape as the search bar */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.25rem !important;
+        width: fit-content !important;
+        margin: 0 auto 2rem !important;
+        padding: 0.3rem !important;
+        background: var(--bg-card) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 999px !important;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        color: var(--text-muted) !important;
+        padding: 0.55rem 1.4rem !important;
+        height: auto !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 999px !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--text) !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        color: var(--bg) !important;
+        background: var(--ivory) !important;
+    }
+    .stTabs [aria-selected="true"] p { color: var(--bg) !important; font-weight: 600 !important; }
+    .stTabs [data-baseweb="tab"] p { color: inherit !important; font-size: 0.82rem !important; margin: 0 !important; }
+
+    .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+    .stTabs [data-baseweb="tab-border"] { display: none !important; }
 
     /* hero */
     .hero {
-        padding: 5rem 0 3.5rem !important;
+        padding: 9vh 0 1.25rem !important;
         text-align: center !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+    }
+
+    .hero h1.hero-title, .hero .hero-sub {
+        text-align: center !important;
+        width: 100% !important;
     }
 
     h1.hero-title {
@@ -121,193 +283,191 @@ st.markdown("""
         line-height: 1.15 !important;
         margin: 0 0 0.5rem !important;
         padding: 0 !important;
+        align-items: center !important;
     }
 
     h1.hero-title span { color: var(--ivory) !important; }
 
+    /* hide streamlit's heading anchor icon so it doesn't push the title off-center */
+    .hero [data-testid="stHeaderActionElements"], .hero h1 a { display: none !important; }
+
     .hero-sub {
         font-size: 0.88rem !important;
-        color: var(--text-faint) !important;
-        margin-bottom: 2rem !important;
+        color: var(--text-muted) !important;
+        margin-bottom: 0 !important;
         display: block !important;
     }
 
-    .try-line {
-        font-size: 0.7rem !important;
-        color: var(--text-faint) !important;
-        margin-top: 0.75rem !important;
-        text-align: center !important;
-        display: block !important;
-    }
 
-    .try-line span { color: var(--ivory-dim) !important; }
+    /* ── results page: same language as the landing (cards, pills, eyebrow labels) ── */
+
+    /* compact hero once a role is searched */
+    .hero.compact { padding: 2.2rem 0 1rem !important; }
+    .hero.compact h1.hero-title { font-size: 1.6rem !important; margin-bottom: 0.2rem !important; }
+    .hero.compact .hero-sub { font-size: 0.78rem !important; }
+
+    /* small uppercase label used everywhere */
+    .eyebrow {
+        display: block !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.12em !important;
+        text-transform: uppercase !important;
+        color: var(--text-muted) !important;
+        margin: 0 0 0.75rem !important;
+    }
+    .eyebrow.center { text-align: center !important; }
+    .eyebrow.must { color: var(--ivory) !important; }
+    .eyebrow.good { color: var(--amber) !important; }
 
     /* role header */
     .role-title {
-        font-size: 1.8rem !important;
+        font-size: 2rem !important;
         font-weight: 700 !important;
         color: var(--text) !important;
         text-align: center !important;
-        padding-top: 2rem !important;
-        margin-bottom: 0.3rem !important;
+        margin: 2rem 0 1.2rem !important;
     }
 
+    /* stat cards */
     .stat-row {
-        display: flex !important;
-        justify-content: center !important;
-        gap: 2.5rem !important;
-        margin: 0.8rem 0 0 !important;
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 1.25rem !important;
+        max-width: 760px !important;
+        margin: 0 auto 2.2rem !important;
     }
-
-    .stat-block { text-align: center !important; }
-
+    .stat-block {
+        background: var(--bg-card) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1.1rem 1rem !important;
+        text-align: center !important;
+    }
     .stat-number {
-        font-size: 1.6rem !important;
+        font-size: 1.7rem !important;
         font-weight: 700 !important;
         color: var(--ivory) !important;
         line-height: 1 !important;
         display: block !important;
     }
-
     .stat-label {
-        font-size: 0.6rem !important;
-        font-weight: 500 !important;
-        color: var(--text-faint) !important;
-        margin-top: 0.25rem !important;
-        display: block !important;
-    }
-
-    /* section headings */
-    .s-heading {
-        font-size: 1.05rem !important;
+        font-size: 0.66rem !important;
         font-weight: 600 !important;
-        color: var(--ivory) !important;
-        margin: 3rem 0 1.25rem !important;
+        letter-spacing: 0.12em !important;
+        text-transform: uppercase !important;
+        color: var(--text-muted) !important;
+        margin-top: 0.5rem !important;
         display: block !important;
     }
 
-    .s-heading-inline {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-        color: var(--ivory) !important;
-        margin: 0 0 1.25rem !important;
-        display: block !important;
+    /* generic card for streamlit containers */
+    .st-key-chart_card, .st-key-tier_must, .st-key-tier_good, .st-key-tier_nice,
+    .st-key-overlap_card, .st-key-gap_have, .st-key-gap_learn, .st-key-insight_card {
+        background: var(--bg-card) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1.3rem 1.4rem !important;
     }
 
-    /* tiers */
-    .tier-col-label {
-        font-size: 0.68rem !important;
-        font-weight: 600 !important;
-        margin-bottom: 0.5rem !important;
-        display: block !important;
-    }
-
-    .tier-label-must { color: var(--ivory) !important; }
-    .tier-label-good { color: var(--amber) !important; }
-    .tier-label-nice { color: var(--text-faint) !important; }
-
-    .tier-skill {
-        padding: 0.4rem 0.6rem !important;
-        margin: 0.2rem 0 !important;
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
+    /* skill chips (tiers, skill gap) */
+    .chip-wrap { display: flex !important; flex-wrap: wrap !important; gap: 0.45rem !important; }
+    .chip {
+        display: inline-block !important;
+        padding: 0.3rem 0.85rem !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(255, 255, 255, 0.10) !important;
         font-size: 0.78rem !important;
         font-weight: 500 !important;
-        display: block !important;
-        text-align: left !important;
-        background: var(--bg-card) !important;
         color: var(--text-muted) !important;
-        border-radius: 4px !important;
+        background: transparent !important;
+        white-space: nowrap !important;
     }
-
-    .tier-empty {
-        font-size: 0.75rem !important;
-        color: var(--text-faint) !important;
-        padding: 0.5rem 0 !important;
-    }
+    .chip.must { border-color: rgba(232, 216, 118, 0.45) !important; color: var(--ivory) !important; background: rgba(232, 216, 118, 0.06) !important; }
+    .chip.good { border-color: rgba(193, 127, 58, 0.45) !important; color: #d9995a !important; background: rgba(193, 127, 58, 0.06) !important; }
+    .chip.have { border-color: rgba(90, 148, 101, 0.5) !important; color: #7fbf8a !important; background: rgba(90, 148, 101, 0.08) !important; }
+    .chip.learn { border-color: rgba(193, 127, 58, 0.45) !important; color: #d9995a !important; background: rgba(193, 127, 58, 0.06) !important; }
+    .chip-empty { font-size: 0.8rem !important; color: var(--text-muted) !important; }
 
     /* skill gap */
-    .overlap-wrap {
-        max-width: 100% !important;
-        margin: 0 0 1rem !important;
-        text-align: left !important;
-    }
-
-    .overlap-label {
-        font-size: 0.68rem !important;
-        font-weight: 500 !important;
-        color: var(--text-faint) !important;
-        margin-bottom: 0.35rem !important;
-        display: block !important;
-    }
-
+    .gap-intro { text-align: center !important; font-size: 0.85rem !important; color: var(--text-muted) !important; margin: 0 0 1rem !important; }
+    .overlap-head { display: flex !important; justify-content: space-between !important; align-items: baseline !important; margin-bottom: 0.7rem !important; }
+    .overlap-pct { font-size: 1.7rem !important; font-weight: 700 !important; color: var(--ivory) !important; line-height: 1 !important; }
     .overlap-track {
-        height: 3px !important;
+        height: 8px !important;
         background: var(--bg-surface) !important;
-        border-radius: 2px !important;
+        border-radius: 999px !important;
+        overflow: hidden !important;
     }
-
     .overlap-fill {
         height: 100% !important;
         background: var(--ivory) !important;
-        border-radius: 2px !important;
+        border-radius: 999px !important;
     }
-
-    .gap-label {
-        font-size: 0.68rem !important;
-        font-weight: 500 !important;
-        color: var(--text-faint) !important;
-        margin: 1rem 0 0.3rem !important;
-        display: block !important;
-    }
-
-    .skill-list {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.83rem !important;
-        line-height: 1.8 !important;
-    }
-
-    .skill-matched { color: var(--green-soft) !important; }
-    .skill-missing { color: var(--amber) !important; }
-
     .strong-match {
         display: inline-block !important;
-        font-size: 0.68rem !important;
-        font-weight: 500 !important;
-        padding: 0.2rem 0.6rem !important;
+        font-size: 0.66rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.1em !important;
+        text-transform: uppercase !important;
+        padding: 0.25rem 0.7rem !important;
         background: var(--green-pale) !important;
-        color: var(--green-soft) !important;
-        border-radius: 3px !important;
-        margin-bottom: 0.5rem !important;
+        color: #7fbf8a !important;
+        border-radius: 999px !important;
+        margin-top: 0.8rem !important;
     }
 
+    /* roadmap steps — same card as "how it works" */
+    .roadmap-list { display: flex !important; flex-direction: column !important; gap: 0.7rem !important; }
     .roadmap-step {
-        padding: 0.5rem 0.75rem !important;
-        margin: 0.2rem 0 !important;
+        display: flex !important;
+        gap: 1rem !important;
+        align-items: flex-start !important;
         background: var(--bg-card) !important;
-        border-radius: 4px !important;
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-size: 0.8rem !important;
-        color: var(--text-muted) !important;
-        line-height: 1.7 !important;
-        text-align: left !important;
-        display: block !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1rem 1.3rem !important;
     }
+    .roadmap-num { color: var(--ivory) !important; font-size: 0.75rem !important; font-weight: 600 !important; letter-spacing: 0.1em !important; padding-top: 0.15rem !important; min-width: 1.4rem !important; }
+    .roadmap-text { color: var(--text) !important; font-size: 0.88rem !important; line-height: 1.65 !important; }
+
+    /* skills-you-have input: same pill as the main search, no button */
+    .st-key-gap_search {
+        background: var(--bg-surface) !important;
+        border: 1px solid rgba(255, 255, 255, 0.06) !important;
+        border-radius: 999px !important;
+        padding: 0.3rem 1.4rem !important;
+        transition: border-color 0.2s ease !important;
+    }
+    .st-key-gap_search:focus-within { border-color: rgba(232, 216, 118, 0.45) !important; }
+    .st-key-gap_search input[type="text"] { border: none !important; text-align: left !important; caret-color: var(--ivory) !important; }
+    .st-key-gap_search input[type="text"]:focus { border: none !important; }
+    .st-key-gap_search input[type="text"]::placeholder { color: var(--text-muted) !important; text-align: left !important; }
 
     /* insight */
     .insight-text {
-        font-size: 0.88rem !important;
-        color: var(--text-muted) !important;
+        font-size: 1rem !important;
+        color: var(--text) !important;
         line-height: 1.85 !important;
-        text-align: left !important;
+        margin: 0 !important;
+    }
+    .st-key-insight_card { max-width: 760px !important; margin: 0 auto !important; padding: 1.8rem 2rem !important; }
+
+    .muted-note { text-align: center !important; color: var(--text-muted) !important; font-size: 0.85rem !important; }
+    .muted-note span { color: var(--ivory) !important; }
+
+    @media (max-width: 720px) {
+        .stat-row { gap: 0.6rem !important; }
+        .stat-number { font-size: 1.3rem !important; }
     }
 
     /* footer */
     .app-footer {
         text-align: center !important;
-        padding: 3rem 0 2rem !important;
-        font-size: 0.7rem !important;
+        padding: 2.5rem 0 1.5rem !important;
+        font-size: 0.68rem !important;
         color: var(--text-faint) !important;
-        margin-top: 4rem !important;
+        margin-top: 3rem !important;
         line-height: 2 !important;
     }
 
@@ -344,92 +504,134 @@ def _render_bar_chart(skill_df):
         height=420
     )
     fig.update_traces(marker_line_width=0)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
-def _render_tiers_stacked(tiers: dict):
-    #renders all three tiers vertically in a single column
-    for label, key, color_class in [
-        ("Must have", "must_have", "tier-label-must"),
-        ("Good to have", "good_to_have", "tier-label-good"),
-        ("Nice to have", "nice_to_have", "tier-label-nice"),
-    ]:
-        skills = tiers.get(key, [])
-        st.markdown(f"<span class='tier-col-label {color_class}'>{label}</span>", unsafe_allow_html=True)
-        if skills:
-            for s in skills:
-                st.markdown(f"<div class='tier-skill'>{escape(s)}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='tier-empty'>—</div>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+def _chips_html(skills: list, chip_class: str = "") -> str:
+    if not skills:
+        return "<span class='chip-empty'>—</span>"
+    chips = "".join(f"<span class='chip {chip_class}'>{escape(s)}</span>" for s in skills)
+    return f"<div class='chip-wrap'>{chips}</div>"
 
-def _clean_roadmap_steps(roadmap: str) -> list[str]:
-    steps = []
-    for line in roadmap.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        line = re.sub(r'^(Step\s+\d+:\s*)+', lambda m: m.group(0).split(':', 1)[0] + ': ', line, flags=re.IGNORECASE)
-        steps.append(line)
-    return steps
+def _render_tier_card(key: str, label: str, skills: list, tone: str):
+    with st.container(key=key):
+        st.markdown(
+            f"<span class='eyebrow {tone}'>{label}</span>{_chips_html(skills[:6], tone)}",
+            unsafe_allow_html=True
+        )
+
+MAX_CACHED_ROADMAPS = 10
+
+
+def _get_roadmap(search_term: str, missing_skills: list, user_skills: list) -> str | None:
+    #per-session roadmap cache, capped so trying many skill combos doesn't grow memory forever
+    #failures (None) aren't stored, so the next rerun retries
+    cache = st.session_state.setdefault("_roadmaps", {})
+    key = f"{search_term.casefold()}:{','.join(sorted(s.casefold() for s in user_skills))}"
+    if key in cache:
+        return cache[key]
+    with st.spinner("building your roadmap..."):
+        roadmap = generate_roadmap(search_term, missing_skills, user_skills)
+    if roadmap:
+        cache[key] = roadmap
+        while len(cache) > MAX_CACHED_ROADMAPS:
+            cache.pop(next(iter(cache)))  #dicts keep insertion order -> drops the oldest
+    return roadmap
 
 def _render_skill_gap(gap: dict, search_term: str, missing_skills: list, user_skills: list):
     overlap_pct = gap["overlap_pct"]
     matched = gap["matched"]
 
-    st.markdown(
-        f"<div class='overlap-wrap'>"
-        f"<span class='overlap-label'>Skill overlap — {overlap_pct}%</span>"
-        f"<div class='overlap-track'><div class='overlap-fill' style='width:{overlap_pct}%;'></div></div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    strong = "<span class='strong-match'>Strong match</span>" if gap["is_strong_match"] else ""
+    with st.container(key="overlap_card"):
+        st.markdown(
+            f"<div class='overlap-head'><span class='eyebrow' style='margin:0;'>Skill overlap</span>"
+            f"<span class='overlap-pct'>{overlap_pct}%</span></div>"
+            f"<div class='overlap-track'><div class='overlap-fill' style='width:{overlap_pct}%;'></div></div>"
+            f"{strong}",
+            unsafe_allow_html=True
+        )
 
-    if gap["is_strong_match"]:
-        st.markdown("<span class='strong-match'>Strong match</span>", unsafe_allow_html=True)
+    have_col, learn_col = st.columns(2)
+    with have_col:
+        with st.container(key="gap_have"):
+            st.markdown(
+                f"<span class='eyebrow'>Skills you have</span>{_chips_html(matched, 'have')}",
+                unsafe_allow_html=True
+            )
+    with learn_col:
+        with st.container(key="gap_learn"):
+            st.markdown(
+                f"<span class='eyebrow'>Skills to learn</span>"
+                f"{_chips_html(missing_skills[:MAX_MISSING_SKILLS_SHOWN], 'learn')}",
+                unsafe_allow_html=True
+            )
 
-    if matched:
-        st.markdown("<span class='gap-label'>Skills you have</span>", unsafe_allow_html=True)
-        matched_str = ", ".join([escape(s) for s in matched])
-        st.markdown(f"<div class='skill-list skill-matched'>{matched_str}</div>", unsafe_allow_html=True)
-
-    if missing_skills:
-        st.markdown("<span class='gap-label'>Skills to learn</span>", unsafe_allow_html=True)
-        missing_str = ", ".join([escape(s) for s in missing_skills[:MAX_MISSING_SKILLS_SHOWN]])
-        st.markdown(f"<div class='skill-list skill-missing'>{missing_str}</div>", unsafe_allow_html=True)
-
-    cache_key = f"roadmap:{search_term}:{','.join(sorted(user_skills))}"
-    if cache_key not in st.session_state:
-        with st.spinner("building your roadmap..."):
-            st.session_state[cache_key] = generate_roadmap(search_term, missing_skills, user_skills)
-
-    roadmap = st.session_state[cache_key]
-    if roadmap:
-        st.markdown("<span class='gap-label'>Learning roadmap</span>", unsafe_allow_html=True)
-        steps = _clean_roadmap_steps(roadmap)
-        for step in steps:
-            st.markdown(f"<div class='roadmap-step'>{escape(step)}</div>", unsafe_allow_html=True)
+    steps = parse_roadmap_steps(_get_roadmap(search_term, missing_skills, user_skills))
+    if steps:
+        st.markdown("<span class='eyebrow' style='margin-top:1.8rem;'>Learning roadmap</span>", unsafe_allow_html=True)
+        cards = "".join(
+            f"<div class='roadmap-step'><span class='roadmap-num'>{i:02d}</span>"
+            f"<span class='roadmap-text'>{escape(text)}</span></div>"
+            for i, text in enumerate(steps, start=1)
+        )
+        st.markdown(f"<div class='roadmap-list'>{cards}</div>", unsafe_allow_html=True)
+    else:
+        #groq failed or returned nothing — say so instead of silently rendering nothing
+        st.markdown("<p class='muted-note'>couldn't generate a roadmap right now. try again in a moment.</p>", unsafe_allow_html=True)
 
 
 # ── page layout ───────────────────────────────────────────────────────────────
 
-#hero
-st.markdown("""
-    <div class='hero'>
-        <h1 class='hero-title'>Skills <span>Worthy</span></h1>
+#hero — full size on the landing, compact once a role has been searched
+_has_search = bool(st.session_state.get("search_input", "").strip())
+st.markdown(f"""
+    <div class='hero{" compact" if _has_search else ""}'>
+        <h1 class='hero-title'>Skills Worthy</h1>
         <span class='hero-sub'>Search any role. See what the market wants right now.</span>
     </div>
 """, unsafe_allow_html=True)
 
-#search bar
-_, search_col, _ = st.columns([1.5, 2, 1.5])
+#search bar — narrow centered column
+_, search_col, _ = st.columns([2, 3, 2])
 with search_col:
-    search_term = st.text_input("search", label_visibility="collapsed", placeholder="data analyst, accountant, marketing manager...")
-    st.markdown(
-        "<span class='try-line'>Try <span>Data Analyst</span> · <span>Accountant</span> · <span>Software Engineer</span></span>",
-        unsafe_allow_html=True
-    )
+    #pill search bar: input + round button share one container (styled via .st-key-hero_search)
+    with st.container(key="hero_search", horizontal=True, vertical_alignment="center", gap=None):
+        search_term = st.text_input("search", key="search_input", label_visibility="collapsed", placeholder="data analyst, accountant...")
+        #clicking blurs the input, which commits its value and reruns — same effect as Enter
+        st.button("", icon=":material/search:", key="search_btn", width="content")
+
+
+def _pick_role(role: str):
+    #runs before the rerun, so the input already holds the role when the script reads it
+    st.session_state["search_input"] = role
+
 
 if not search_term:
+    #landing only: trending role chips (clicking one runs that search) + how it works
+    st.markdown("<div class='trending-label'>Trending roles</div>", unsafe_allow_html=True)
+    with st.container(key="trending", horizontal=True, horizontal_alignment="center", gap="small"):
+        for role in TRENDING_ROLES:
+            st.button(role, key=f"chip_{role}", on_click=_pick_role, args=(role,), width="content")
+
+    st.markdown("""
+        <div class='how-row'>
+            <div class='how-step'>
+                <span class='how-num'>01</span>
+                <span class='how-title'>Search a role</span>
+                <span class='how-text'>We scan live job postings for the title you enter.</span>
+            </div>
+            <div class='how-step'>
+                <span class='how-num'>02</span>
+                <span class='how-title'>See the skills</span>
+                <span class='how-text'>Ranked by how often employers actually ask for them.</span>
+            </div>
+            <div class='how-step'>
+                <span class='how-num'>03</span>
+                <span class='how-title'>Find your gap</span>
+                <span class='how-text'>Add your skills and get a roadmap for what to learn next.</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 search_term_clean = search_term.strip()
@@ -449,7 +651,7 @@ if not re.search(r'[a-zA-Z]', search_term_clean):
 if state.is_new_search(search_term_clean):
     with st.spinner(f"scanning live postings for '{search_term_clean}'..."):
         try:
-            jobs = fetch_jobs(search_term_clean)
+            jobs = _cached_fetch_jobs(search_term_clean.casefold())
         except JobFetchError as e:
             st.error(f"could not fetch jobs: {e}")
             st.stop()
@@ -494,7 +696,6 @@ if state.is_new_search(search_term_clean):
 
 #read from state
 results = state.get_results()
-jobs = results["jobs"]
 skill_result = results["skill_result"]
 top_skills = results["top_skills"]
 insight = results["insight"]
@@ -523,50 +724,77 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-#row 1 — bar chart (left) + skill priority tiers (right)
-st.markdown("<span class='s-heading' style='text-align:center;'>Top in-demand skills</span>", unsafe_allow_html=True)
+#tabs for navigation
+tab_skills, tab_gap, tab_insight = st.tabs(["Skills", "Skill Gap & Roadmap", "Insight"])
 
-if not skill_df.empty and len(skill_df) >= 3:
-    chart_col, tier_col = st.columns([3, 1.5])
+#tab 1 — skills bar chart + tier columns side by side
+with tab_skills:
+    if not skill_df.empty and len(skill_df) >= 3:
+        chart_col, tier_col = st.columns([3, 2], gap="medium")
 
-    with chart_col:
-        _render_bar_chart(skill_df)
+        with chart_col:
+            with st.container(key="chart_card"):
+                st.markdown("<span class='eyebrow'>Most requested skills</span>", unsafe_allow_html=True)
+                _render_bar_chart(skill_df)
 
-    with tier_col:
-        st.markdown("<span class='s-heading-inline'>Skill priority</span>", unsafe_allow_html=True)
-        if tiers and any(tiers.values()):
-            _render_tiers_stacked(tiers)
-        else:
-            st.markdown("<p style='color:#4a5060; font-size:0.82rem;'>not enough data to rank priorities</p>", unsafe_allow_html=True)
+        with tier_col:
+            _render_tier_card("tier_must", "Must have", tiers.get("must_have", []), "must")
+            _render_tier_card("tier_good", "Good to have", tiers.get("good_to_have", []), "good")
+            _render_tier_card("tier_nice", "Nice to have", tiers.get("nice_to_have", []), "")
 
-elif not skill_df.empty:
+    elif not skill_df.empty:
+        st.markdown(
+            "<p class='muted-note'>"
+            "not enough skills found — try a more specific role like "
+            f"<span>{escape(search_term_clean)} analyst</span> or "
+            f"<span>{escape(search_term_clean)} engineer</span></p>",
+            unsafe_allow_html=True
+        )
+
+#tab 2 — skill gap + roadmap
+with tab_gap:
     st.markdown(
-        "<p style='text-align:center; color:#4a5060; font-size:0.85rem;'>"
-        "not enough skills found — try a more specific role like "
-        f"<span style='color:#e8d876;'>{escape(search_term_clean)} analyst</span> or "
-        f"<span style='color:#e8d876;'>{escape(search_term_clean)} engineer</span></p>",
+        "<p class='gap-intro'>List the skills you already have, separated by commas.</p>",
         unsafe_allow_html=True
     )
 
-#row 2 — skill gap (left) + market insight (right)
-gap_col, insight_col = st.columns([3, 2])
-
-with gap_col:
-    st.markdown("<span class='s-heading-inline' style='margin-top:3rem;'>Skill gap</span>", unsafe_allow_html=True)
-    user_skills_input = st.text_input("your skills", label_visibility="collapsed", placeholder="Python, SQL, Excel...")
+    _, gap_input_col, _ = st.columns([2, 3, 2])
+    with gap_input_col:
+        with st.container(key="gap_search"):
+            user_skills_input = st.text_input(
+                "your skills", label_visibility="collapsed", placeholder="Python, SQL, Excel...",
+                max_chars=MAX_USER_SKILLS_CHARS,
+            )
 
     if user_skills_input:
-        user_skills = [s.strip() for s in user_skills_input.split(',') if s.strip()]
+        #dedupe case-insensitively, keep first spelling, cap count (bounds prompt size + roadmap cache keys)
+        seen, user_skills = set(), []
+        for s in user_skills_input.split(','):
+            s = s.strip()
+            if s and s.casefold() not in seen:
+                seen.add(s.casefold())
+                user_skills.append(s)
+        user_skills = user_skills[:MAX_USER_SKILLS]
         if not user_skills:
             st.warning("please enter at least one skill.")
         else:
-            gap = compute_skill_gap(top_skills, user_skills)
+            #compare against the same filtered list the chart shows, not the raw top-20
+            #(raw list can contain role-noise / generic terms the user never sees)
+            gap_skills = skill_df["skill"].tolist() if not skill_df.empty else top_skills
+            gap = compute_skill_gap(gap_skills, user_skills)
             _render_skill_gap(gap, search_term_clean, gap["missing"], user_skills)
 
-with insight_col:
+#tab 3 — market insight
+with tab_insight:
     if insight and insight.available:
-        st.markdown("<span class='s-heading-inline' style='margin-top:3rem;'>Market insight</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='insight-text'>{escape(insight.text)}</p>", unsafe_allow_html=True)
+        with st.container(key="insight_card"):
+            st.markdown(
+                f"<span class='eyebrow must'>Market insight</span>"
+                f"<p class='insight-text'>{escape(insight.text)}</p>",
+                unsafe_allow_html=True
+            )
+    else:
+        st.markdown("<p class='muted-note'>no insight available for this search.</p>", unsafe_allow_html=True)
 
 #footer
 st.markdown("""

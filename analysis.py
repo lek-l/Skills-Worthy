@@ -78,18 +78,51 @@ def build_skill_dataframe(skill_counts: Counter, search_term: str, total_analyze
 
     #percentage of postings that mention each skill
     if total_analyzed > 0:
-        df['pct'] = (df['count'] / total_analyzed * 100).round(0).astype(int)
+        #clip: merged spellings ("Powerbi" + "Power BI") could otherwise exceed 100% of postings
+        df['pct'] = (df['count'] / total_analyzed * 100).round(0).clip(upper=100).astype(int)
     else:
         df['pct'] = 0
 
     return df
 
 
-def compute_skill_gap(top_skills: list[str], user_skills: list[str]) -> dict:
-    user_lower = {s.lower().strip() for s in user_skills if s.strip()}
+#"Step 3:", "step 3 -", "3.", "3)", optionally wrapped in markdown bold
+_STEP_PREFIX = re.compile(r'^\s*(?:\*\*)?\s*(?:step\s*\d+\s*[:.)\-–]|\d+\s*[.):])\s*(?:\*\*)?\s*', re.IGNORECASE)
 
-    matched = [s for s in top_skills if s.lower() in user_lower]
-    missing = [s for s in top_skills if s.lower() not in user_lower]
+
+def parse_roadmap_steps(roadmap: str) -> list[str]:
+    #turns the model's roadmap text into clean step strings (no "Step N:" / "N." prefix)
+    #if the model numbered its steps, intro/outro lines ("Here are your steps:") are dropped;
+    #if nothing is numbered (e.g. the "you already have all the skills" message), every line is kept
+    if not roadmap:
+        return []
+    lines = [line.strip() for line in roadmap.splitlines() if line.strip()]
+    numbered = []
+    for line in lines:
+        match = _STEP_PREFIX.match(line)
+        if match:
+            text = line[match.end():]
+            #models sometimes repeat the label: "Step 1: Step 1: learn x"
+            while (inner := _STEP_PREFIX.match(text)):
+                text = text[inner.end():]
+            text = text.strip().strip('*').strip()
+            if text:
+                numbered.append(text)
+    return numbered if numbered else lines
+
+
+def _skill_key(skill: str) -> str:
+    #case/space/punctuation-insensitive key: "Power BI" == "powerbi" == "power-bi"
+    #keeps + and # so C++ and C# stay distinct from C
+    return re.sub(r'[^a-z0-9+#]', '', skill.lower())
+
+
+def compute_skill_gap(top_skills: list[str], user_skills: list[str]) -> dict:
+    user_keys = {_skill_key(s) for s in user_skills if s.strip()}
+    user_keys.discard("")
+
+    matched = [s for s in top_skills if _skill_key(s) in user_keys]
+    missing = [s for s in top_skills if _skill_key(s) not in user_keys]
 
     overlap_pct = round((len(matched) / len(top_skills)) * 100) if top_skills else 0
 

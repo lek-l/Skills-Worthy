@@ -124,20 +124,34 @@ class TestComputeSkillTiers:
         }
 
     def test_percentage_thresholds(self):
-        #out of 10: A=8(80%) must, B=4(40%) good, C=1(10%) nice
-        counts = Counter({"A": 8, "B": 4, "C": 1})
+        #thresholds: must >= 30%, good 15-29%, nice < 15%
+        #out of 10: A=8(80%) must, B=2(20%) good, C=1(10%) nice
+        counts = Counter({"A": 8, "B": 2, "C": 1})
         tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
         assert tiers["must_have"] == ["A"]
         assert tiers["good_to_have"] == ["B"]
         assert tiers["nice_to_have"] == ["C"]
 
-    def test_nothing_hits_fifty_percent(self):
-        #out of 10: A=3(30%) good, B=2(20%) nice, C=1(10%) nice
-        counts = Counter({"A": 3, "B": 2, "C": 1})
+    def test_boundaries_are_inclusive_at_lower_edge(self):
+        #out of 20: A=6(30%) must, B=3(15%) good, C=2(10%) nice
+        counts = Counter({"A": 6, "B": 3, "C": 2})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 20)
+        assert tiers["must_have"] == ["A"]
+        assert tiers["good_to_have"] == ["B"]
+        assert tiers["nice_to_have"] == ["C"]
+
+    def test_nothing_hits_must_threshold(self):
+        #out of 10: A=2(20%) good, B=1(10%) nice, C=1(10%) nice
+        counts = Counter({"A": 2, "B": 1, "C": 1})
         tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
         assert tiers["must_have"] == []
         assert tiers["good_to_have"] == ["A"]
         assert tiers["nice_to_have"] == ["B", "C"]
+
+    def test_each_tier_capped_at_eight(self):
+        counts = Counter({f"S{i}": 9 for i in range(12)})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
+        assert len(tiers["must_have"]) == 8
 
     def test_excludes_role_noise(self):
         counts = Counter({"Data Analysis": 9, "Python": 5})
@@ -161,21 +175,40 @@ def fake_response(content, finish_reason="stop"):
     return NS(choices=[NS(message=NS(content=content), finish_reason=finish_reason)])
 
 
+def fake_client(**create_kwargs):
+    from unittest.mock import MagicMock
+    client = MagicMock()
+    client.chat.completions.create.configure_mock(**create_kwargs)
+    return client
+
+
 class TestCallGroq:
     def test_returns_content(self):
-        with patch.object(ai._client.chat.completions, "create", return_value=fake_response("  hello  ")):
+        with patch.object(ai, "_get_client", return_value=fake_client(return_value=fake_response("  hello  "))):
             assert ai._call_groq("p", 50) == "hello"
 
     @pytest.mark.parametrize("content", [None, "", "   "])
     def test_empty_returns_none(self, content, caplog):
-        with patch.object(ai._client.chat.completions, "create", return_value=fake_response(content, "length")):
+        with patch.object(ai, "_get_client", return_value=fake_client(return_value=fake_response(content, "length"))):
             with caplog.at_level("WARNING"):
                 assert ai._call_groq("p", 50) is None
 
     def test_exception_returns_none(self, caplog):
-        with patch.object(ai._client.chat.completions, "create", side_effect=RuntimeError("boom")):
+        with patch.object(ai, "_get_client", return_value=fake_client(side_effect=RuntimeError("boom"))):
             with caplog.at_level("ERROR"):
                 assert ai._call_groq("p", 50) is None
+
+    def test_no_choices_returns_none(self):
+        from types import SimpleNamespace as NS
+        with patch.object(ai, "_get_client", return_value=fake_client(return_value=NS(choices=[]))):
+            assert ai._call_groq("p", 50) is None
+
+    def test_missing_api_key_skips_call(self, monkeypatch):
+        #no key -> no client, no crash, ai features just return None
+        monkeypatch.setattr(ai, "GROQ_API_KEY", None)
+        monkeypatch.setattr(ai, "_client", None)
+        assert ai._get_client() is None
+        assert ai._call_groq("p", 50) is None
 
 
 class TestPipeline:

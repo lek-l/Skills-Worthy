@@ -1,7 +1,6 @@
 import streamlit as st
 
 _DEFAULTS = {
-    "jobs": None,
     "last_search": None,
     "skill_result": None,
     "top_skills": [],
@@ -22,7 +21,9 @@ def initialize():
                 st.session_state[key] = default
 
 def is_new_search(query: str) -> bool:
-    return st.session_state.last_search != query.strip()
+    #case-insensitive so "Data Analyst" and "data analyst" don't refetch
+    last = st.session_state.last_search
+    return last is None or last.strip().casefold() != query.strip().casefold()
 
 def store_results(
     query: str,
@@ -35,8 +36,9 @@ def store_results(
     processed,
     tiers: dict
 ):
+    #jobs is accepted for signature compatibility but not stored: raw postings are never
+    #read after processing, and the shared fetch cache already holds them
     st.session_state.last_search = query
-    st.session_state.jobs = jobs
     st.session_state.skill_result = skill_result
     st.session_state.top_skills = top_skills
     st.session_state.categories = categories
@@ -47,7 +49,6 @@ def store_results(
 
 def get_results() -> dict:
     return {
-        "jobs": st.session_state.jobs,
         "skill_result": st.session_state.skill_result,
         "top_skills": st.session_state.top_skills,
         "categories": st.session_state.categories,

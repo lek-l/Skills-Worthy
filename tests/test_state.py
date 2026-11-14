@@ -92,3 +92,12 @@ class TestState:
         state.initialize()
         store(state, skill_result=FakeSkillResult(True))
         assert state.has_results() is False
+
+
+class TestJobsNotStored:
+    def test_raw_jobs_are_not_kept_in_session(self, state):
+        #raw postings are only needed during processing; keeping them per session wastes memory
+        state.initialize()
+        store(state, query="data analyst")
+        assert "jobs" not in state.get_results()
+        assert "jobs" not in state.st.session_state

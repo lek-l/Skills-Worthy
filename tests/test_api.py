@@ -69,7 +69,6 @@ class TestFetchJobs:
             jobs = api.fetch_jobs("analyst")
         assert len(jobs) == 18
 
-    @pytest.mark.xfail(strict=True, reason="known bug: a query with zero real results raises JobFetchError, which the UI labels a configuration error")
     def test_zero_results_is_not_treated_as_an_error(self):
         empty = MagicMock()
         empty.raise_for_status.return_value = None
