@@ -57,6 +57,21 @@ class TestBuildSkillDataframe:
         df = analysis.build_skill_dataframe(Counter({"Word": 5, "Python": 1}), "x", 10)
         assert df["skill"].tolist() == ["Python"]
 
+    def test_pct_overflow_is_logged_and_clipped(self, caplog):
+        #if the pipeline ever double-counts (count > total_analyzed) the result must still render cleanly
+        #but future-us needs to see it in the logs so the root cause gets fixed
+        with caplog.at_level("WARNING", logger="analysis"):
+            df = analysis.build_skill_dataframe(Counter({"Python": 15}), "x", 10)
+        assert df["pct"].tolist() == [100]
+        assert "possible double count" in caplog.text
+        assert "Python" in caplog.text
+
+    def test_pct_at_exactly_100_does_not_log(self, caplog):
+        #100 is legitimate (every scanned description mentioned the skill) — must not fire the warning
+        with caplog.at_level("WARNING", logger="analysis"):
+            df = analysis.build_skill_dataframe(Counter({"SQL": 10}), "x", 10)
+        assert df["pct"].tolist() == [100]
+        assert "possible double count" not in caplog.text
 
 class TestComputeSkillGap:
     def test_matched_and_missing(self):

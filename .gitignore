@@ -12,3 +12,5 @@ groq_diag.py
 measure.py
 quick_test.py
 .streamlit/secrets.toml
+
+.claude/

@@ -50,6 +50,7 @@ class TestState:
         assert state.st.session_state["last_search"] is None
         assert state.st.session_state["top_skills"] == []
         assert state.st.session_state["tiers"] == {}
+        assert state.st.session_state["search_count"] == 0
 
     def test_initialize_does_not_overwrite_existing_values(self, state):
         state.st.session_state["last_search"] = "kept"
@@ -77,7 +78,8 @@ class TestState:
         results = state.get_results()
         assert results["top_skills"] == ["SQL"]
         assert results["tiers"] == {"must_have": ["SQL"]}
-        assert set(results) == set(state._DEFAULTS) - {"last_search"}
+        #search_count is a per-session metric, not part of the stored search result payload
+        assert set(results) == set(state._DEFAULTS) - {"last_search", "search_count"}
 
     def test_has_results_false_initially(self, state):
         state.initialize()

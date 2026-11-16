@@ -1,6 +1,10 @@
 import logging
-import requests
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
+
+import requests
+
 from config import (
     JSEARCH_API_KEY,
     JSEARCH_BASE_URL,
@@ -17,22 +21,50 @@ _HEADERS = {
     "X-RapidAPI-Host": JSEARCH_HOST
 }
 
+
+class FetchError(Enum):
+    #named reasons a single page fetch failed — surfaces in logs and tests instead of anonymous sentinels
+    TIMED_OUT = "timed_out"
+    RATE_LIMITED = "rate_limited"
+    AUTH_FAILED = "auth_failed"
+    NETWORK = "network"
+
+
 class JobFetchError(Exception):
     #raised when job fetching fails in a way the caller needs to handle differently
     pass
 
-#marker returned by _fetch_page when a page timed out (vs None for any other failure)
-#lets fetch_jobs tell "jsearch is slow" apart from "connection / api key problem"
-_TIMED_OUT = object()
+
+class PartialFetchError(Exception):
+    #raised when some pages succeeded and others failed
+    #the jobs attribute carries the usable results so the caller can still render them
+    #deliberately an exception so @st.cache_data does not cache partial results
+    def __init__(self, jobs: list, failed: int, total: int):
+        self.jobs = jobs
+        self.failed = failed
+        self.total = total
+        super().__init__(f"{failed} of {total} pages failed")
+
+
+#messages for the all-failures-of-one-kind cases — kept next to FetchError for easy pairing
+_ALL_FAILED_MESSAGES = {
+    FetchError.RATE_LIMITED: "the job search is temporarily rate-limited. try again in a minute.",
+    FetchError.AUTH_FAILED: "the job search is not authorized — the jsearch api key is invalid or revoked.",
+    FetchError.TIMED_OUT: "the job search is taking too long right now. try again in a moment.",
+    FetchError.NETWORK: "could not reach the job search right now — check your connection.",
+}
+
 
 def _fetch_single_page(query: str, page: int) -> list:
-    #fetches one page of job results — returns empty list on failure (kept for existing callers)
+    #legacy wrapper: returns empty list on any failure
+    #kept so direct callers (and the TestFetchSinglePage tests) don't have to care about FetchError
     result = _fetch_page(query, page)
     return result if isinstance(result, list) else []
 
+
 def _fetch_page(query: str, page: int):
     #fetches one page of job results — designed to run in parallel
-    #returns a list (possibly empty = zero results), _TIMED_OUT on timeout, or None on other failures
+    #returns a list on success (possibly empty = zero real results), or a FetchError member on failure
     params = {
         "query": query,
         "num_pages": "1",
@@ -50,30 +82,42 @@ def _fetch_page(query: str, page: int):
         return data.get('data', [])
 
     except requests.exceptions.Timeout:
-        #timeout is expected under load — log and continue, dont crash
         logger.warning("timeout on page %d for query '%s'", page, query)
-        return _TIMED_OUT
+        return FetchError.TIMED_OUT
 
     except requests.exceptions.HTTPError as e:
-        #4xx means bad request or auth issue — worth surfacing differently from network errors
+        #distinguish rate limits and auth failures so the user sees the right message
+        status = getattr(e.response, "status_code", None)
+        if status == 429:
+            logger.warning("rate limited on page %d for query '%s'", page, query)
+            return FetchError.RATE_LIMITED
+        if status in (401, 403):
+            logger.error("auth failed on page %d (status %s)", page, status)
+            return FetchError.AUTH_FAILED
         logger.error("http error on page %d: %s", page, e)
-        return None
+        return FetchError.NETWORK
+
+    except ValueError as e:
+        #catches json.JSONDecodeError on old requests versions where it is not a RequestException
+        logger.error("decode error on page %d: %s", page, e)
+        return FetchError.NETWORK
 
     except requests.exceptions.RequestException as e:
-        #catch-all for network level failures
+        #catch-all for network level failures (dns, connection reset, ssl, etc.)
         logger.error("network error on page %d: %s", page, e)
-        return None
+        return FetchError.NETWORK
+
 
 def fetch_jobs(query: str) -> list:
     #fetches all pages in parallel — significantly faster than sequential fetching
-    #raises JobFetchError if api key is missing or all pages fail
+    #raises JobFetchError if api key is missing or all pages fail with the same reason
+    #raises PartialFetchError if some pages fail so a thin result is not cached
     if not JSEARCH_API_KEY:
         raise JobFetchError("jsearch api key is not configured")
 
     pages = range(1, JSEARCH_PAGES + 1)
     all_jobs = []
-    failed = 0
-    timed_out = 0
+    failures = Counter()
 
     #threadpoolexecutor fires all page requests simultaneously
     #max_workers matches page count — no reason to queue when all can run at once
@@ -84,17 +128,24 @@ def fetch_jobs(query: str) -> list:
         }
         for future in as_completed(futures):
             result = future.result()
-            if not isinstance(result, list):
-                failed += 1
-                timed_out += result is _TIMED_OUT
-                continue
-            all_jobs.extend(result)
+            if isinstance(result, list):
+                all_jobs.extend(result)
+            else:
+                failures[result] += 1
 
-    if failed == JSEARCH_PAGES:
-        if timed_out == JSEARCH_PAGES:
-            #every page was just slow — nothing is wrong on the user's side
-            raise JobFetchError("the job search is taking too long right now. try again in a moment.")
-        raise JobFetchError("all page requests failed — check your connection or API key")
+    total_failed = sum(failures.values())
+
+    if total_failed == JSEARCH_PAGES:
+        #every page failed — pick the most-specific message if one reason dominates, else generic
+        dominant, count = failures.most_common(1)[0]
+        if count == JSEARCH_PAGES:
+            raise JobFetchError(_ALL_FAILED_MESSAGES[dominant])
+        raise JobFetchError(_ALL_FAILED_MESSAGES[FetchError.NETWORK])
+
+    if total_failed > 0:
+        #some pages worked, others did not — raise so the result is not cached
+        #the caller uses PartialFetchError.jobs to still render what we got
+        raise PartialFetchError(all_jobs, total_failed, JSEARCH_PAGES)
 
     return all_jobs
 

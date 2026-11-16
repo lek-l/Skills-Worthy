@@ -4,7 +4,7 @@ from html import escape
 import streamlit as st
 import plotly.express as px
 import state
-from api import fetch_jobs, JobFetchError
+from api import fetch_jobs, JobFetchError, PartialFetchError
 from analysis import process_jobs, build_skill_dataframe, compute_skill_gap, parse_roadmap_steps
 from ai import run_ai_pipeline, generate_roadmap
 from config import MIN_SEARCH_LENGTH, MAX_SEARCH_LENGTH, MAX_MISSING_SKILLS_SHOWN, MAX_DESCRIPTIONS
@@ -13,12 +13,18 @@ logger = logging.getLogger(__name__)
 
 MAX_USER_SKILLS = 30
 MAX_USER_SKILLS_CHARS = 500
+#soft cap on real jsearch fetches per session
+#the shared free-tier quota is ~66 searches/month total, so one tab cannot be allowed to burn it
+MAX_SEARCHES_PER_SESSION = 20
 
 
 #shared across sessions: the same role searched twice within an hour costs one api round-trip
-#exceptions (JobFetchError) are not cached, so failures retry on the next search
+#exceptions (JobFetchError, PartialFetchError) are not cached, so failures retry on the next search
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
 def _cached_fetch_jobs(query_key: str) -> list:
+    #the body only runs on a cache miss, so this increment counts real api calls only
+    #it also runs before fetch_jobs raises, so a failed attempt still burns one slot (conservative)
+    st.session_state.search_count += 1
     return fetch_jobs(query_key)
 
 
@@ -360,6 +366,12 @@ st.markdown("""
         margin-top: 0.5rem !important;
         display: block !important;
     }
+    .stat-hint {
+        font-size: 0.65rem !important;
+        color: var(--text-faint) !important;
+        margin-top: 0.25rem !important;
+        display: block !important;
+    }
 
     /* generic card for streamlit containers */
     .st-key-chart_card, .st-key-tier_must, .st-key-tier_good, .st-key-tier_nice,
@@ -649,9 +661,22 @@ if not re.search(r'[a-zA-Z]', search_term_clean):
     st.stop()
 
 if state.is_new_search(search_term_clean):
+    if st.session_state.search_count >= MAX_SEARCHES_PER_SESSION:
+        #soft per-session cap: cache hits don't count, so this stops a hammering tab, not a curious visitor
+        #refreshing the page resets session state, which is the escape hatch
+        st.warning(
+            f"you've reached this session's search limit ({MAX_SEARCHES_PER_SESSION} live searches). "
+            "refresh the page to continue — this keeps the free api quota available for everyone."
+        )
+        st.stop()
     with st.spinner(f"scanning live postings for '{search_term_clean}'..."):
         try:
             jobs = _cached_fetch_jobs(search_term_clean.casefold())
+        except PartialFetchError as e:
+            #some pages failed; use what we got but warn and skip the cache
+            #st.cache_data does not cache exceptions, so a rerun will refetch
+            jobs = e.jobs
+            st.warning(f"only {e.total - e.failed} of {e.total} pages loaded. results may be incomplete.")
         except JobFetchError as e:
             st.error(f"could not fetch jobs: {e}")
             st.stop()
@@ -705,6 +730,16 @@ tiers = results["tiers"]
 total_analyzed = min(len(processed.descriptions), MAX_DESCRIPTIONS)
 skill_df = build_skill_dataframe(skill_result.counts, search_term_clean, total_analyzed)
 
+#stat row values: total found by the pipeline vs how many fit on the chart
+#the hint only renders when there are more skills than the chart can show, so no noise when they match
+total_skills_found = len(skill_result.counts)
+shown_count = len(skill_df)
+skills_hint = (
+    f"<span class='stat-hint'>top {shown_count} shown</span>"
+    if total_skills_found > shown_count
+    else ""
+)
+
 #role header and stats
 st.markdown(f"""
     <div class='role-title'>{escape(search_term_clean.title())}</div>
@@ -718,8 +753,9 @@ st.markdown(f"""
             <span class='stat-label'>Scanned</span>
         </div>
         <div class='stat-block'>
-            <span class='stat-number'>{len(skill_result.counts)}</span>
-            <span class='stat-label'>Skills extracted</span>
+            <span class='stat-number'>{total_skills_found}</span>
+            <span class='stat-label'>Unique skills found</span>
+            {skills_hint}
         </div>
     </div>
 """, unsafe_allow_html=True)

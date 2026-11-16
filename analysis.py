@@ -1,9 +1,11 @@
+import logging
 import re
 import pandas as pd
 from collections import Counter
 from api import extract_job_fields
 from config import TOP_SKILLS_COUNT, CATEGORY_PREVIEW_COUNT, ACRONYM_MAP
 
+logger = logging.getLogger(__name__)
 
 class ProcessedJobs:
     def __init__(self, descriptions: list[str], job_count: int):
@@ -78,8 +80,17 @@ def build_skill_dataframe(skill_counts: Counter, search_term: str, total_analyze
 
     #percentage of postings that mention each skill
     if total_analyzed > 0:
-        #clip: merged spellings ("Powerbi" + "Power BI") could otherwise exceed 100% of postings
-        df['pct'] = (df['count'] / total_analyzed * 100).round(0).clip(upper=100).astype(int)
+        df['pct'] = (df['count'] / total_analyzed * 100).round(0).astype(int)
+        #the counting pipeline caps each skill at one hit per description, so pct should never exceed 100
+        #if it does, something upstream double-counted (aliasing drift, taxonomy change, niche merge gap)
+        #we log it loudly so future-us notices, then clip for display so users don't see a broken 110% bar
+        overflow = df[df['pct'] > 100]
+        if not overflow.empty:
+            logger.warning(
+                "skill pct exceeded 100 — possible double count: %s",
+                dict(zip(overflow['skill'], overflow['pct'])),
+            )
+            df['pct'] = df['pct'].clip(upper=100)
     else:
         df['pct'] = 0
 

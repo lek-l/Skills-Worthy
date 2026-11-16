@@ -1,6 +1,6 @@
 #edge cases found during the pre-commit review: empty/garbage inputs, boundaries, case handling
 from collections import Counter
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -58,33 +58,56 @@ class TestSkillDataframeEdgeCases:
 
 
 class TestFetchEdgeCases:
-    def test_partial_page_failure_still_returns_jobs(self):
-        #one page times out, others succeed -> no exception, jobs from good pages kept
+    def test_partial_page_failure_raises_with_surviving_jobs(self):
+        #one page fails, others succeed -> raises PartialFetchError so the thin result is not cached
+        #jobs from the good pages ride along on the exception
         def page(query, n):
             return None if n == 1 else [{"job_title": f"job {n}"}]
         with patch.object(api, "_fetch_page", side_effect=page):
-            jobs = api.fetch_jobs("x")
-        assert len(jobs) == api.JSEARCH_PAGES - 1
+            with pytest.raises(api.PartialFetchError) as exc_info:
+                api.fetch_jobs("x")
+        assert len(exc_info.value.jobs) == api.JSEARCH_PAGES - 1
+        assert exc_info.value.failed == 1
 
-    def test_all_pages_failed_raises(self):
-        with patch.object(api, "_fetch_page", return_value=None):
-            with pytest.raises(api.JobFetchError):
+    def test_all_pages_failed_generic_raises(self):
+        with patch.object(api, "_fetch_page", return_value=api.FetchError.NETWORK):
+            with pytest.raises(api.JobFetchError, match="check your connection"):
                 api.fetch_jobs("x")
 
     def test_all_pages_timed_out_says_slow_not_connection(self):
-        with patch.object(api, "_fetch_page", return_value=api._TIMED_OUT):
+        with patch.object(api, "_fetch_page", return_value=api.FetchError.TIMED_OUT):
             with pytest.raises(api.JobFetchError, match="taking too long"):
                 api.fetch_jobs("x")
 
-    def test_mixed_timeout_and_error_keeps_connection_message(self):
-        results = iter([api._TIMED_OUT, None, api._TIMED_OUT])
+    def test_all_pages_rate_limited_says_rate_limited(self):
+        with patch.object(api, "_fetch_page", return_value=api.FetchError.RATE_LIMITED):
+            with pytest.raises(api.JobFetchError, match="rate-limited"):
+                api.fetch_jobs("x")
+
+    def test_all_pages_auth_failed_says_not_authorized(self):
+        with patch.object(api, "_fetch_page", return_value=api.FetchError.AUTH_FAILED):
+            with pytest.raises(api.JobFetchError, match="not authorized"):
+                api.fetch_jobs("x")
+
+    def test_mixed_failure_reasons_falls_back_to_generic_network_message(self):
+        #if no single reason dominates, the user gets the safest generic message
+        results = iter([api.FetchError.TIMED_OUT, api.FetchError.NETWORK, api.FetchError.TIMED_OUT])
         with patch.object(api, "_fetch_page", side_effect=lambda q, p: next(results)):
             with pytest.raises(api.JobFetchError, match="check your connection"):
                 api.fetch_jobs("x")
 
-    def test_single_page_helper_hides_timeout_marker(self):
-        with patch.object(api, "_fetch_page", return_value=api._TIMED_OUT):
+    def test_single_page_helper_hides_failure_marker(self):
+        with patch.object(api, "_fetch_page", return_value=api.FetchError.TIMED_OUT):
             assert api._fetch_single_page("x", 1) == []
+
+    def test_malformed_json_response_is_caught(self):
+        #old requests versions raise ValueError (not RequestException) on bad json
+        #the extra except ValueError covers both; the page is treated as a network failure
+        bad = MagicMock()
+        bad.raise_for_status.return_value = None
+        bad.json.side_effect = ValueError("not json")
+        with patch.object(api.requests, "get", return_value=bad):
+            assert api._fetch_page("x", 1) is api.FetchError.NETWORK
 
     def test_zero_real_results_is_empty_list_not_error(self):
         #UI then shows "no postings found" instead of "could not fetch jobs"

@@ -63,12 +63,17 @@ class TestFetchJobs:
             with pytest.raises(api.JobFetchError):
                 api.fetch_jobs("analyst")
 
-    def test_partial_failure_returns_surviving_pages(self):
+    def test_partial_failure_raises_with_surviving_pages(self):
+        #partial failures must raise so @st.cache_data does not cache a thin result for an hour
+        #the surviving jobs ride along on the exception so the caller can still render them
         responses = [ok_response(10), requests.exceptions.Timeout(), ok_response(8)]
         with patch.object(api.requests, "get", side_effect=responses):
-            jobs = api.fetch_jobs("analyst")
-        assert len(jobs) == 18
-
+            with pytest.raises(api.PartialFetchError) as exc_info:
+                api.fetch_jobs("analyst")
+        assert len(exc_info.value.jobs) == 18
+        assert exc_info.value.failed == 1
+        assert exc_info.value.total == api.JSEARCH_PAGES
+        
     def test_zero_results_is_not_treated_as_an_error(self):
         empty = MagicMock()
         empty.raise_for_status.return_value = None

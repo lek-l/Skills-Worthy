@@ -1,6 +1,6 @@
-streamlit
-pandas
-plotly
-groq
-requests
-python-dotenv
+streamlit>=1.40,<2
+pandas>=2.0,<4
+plotly>=5.0,<8
+groq>=1.0,<2
+requests>=2.27,<3
+python-dotenv>=1.0,<2

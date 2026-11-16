@@ -8,7 +8,10 @@ _DEFAULTS = {
     "insight": None,
     "soft_skills": [],
     "processed": None,
-    "tiers": {}
+    "tiers": {},
+    #counts real jsearch fetches per session (cache hits don't count)
+    #soft cap in app.py keeps one user from burning the shared free-tier quota
+    "search_count": 0,
 }
 
 def initialize():
