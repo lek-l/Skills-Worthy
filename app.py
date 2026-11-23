@@ -256,10 +256,17 @@ st.markdown("""
     }
 
     .stTabs [aria-selected="true"] {
-        color: var(--bg) !important;
-        background: var(--ivory) !important;
+        background: transparent  !important;
     }
-    .stTabs [aria-selected="true"] p { color: var(--bg) !important; font-weight: 600 !important; }
+    .stTabs [aria-selected="true"] p {
+        color: var(--text) !important;
+        font-weight: 600 !important;
+        text-decoration: underline !important;
+        text-decoration-color: var(--ivory) !important;
+        text-decoration-thickness: 2px !important;
+        text-underline-offset: 6px !important;
+    }
+    .stTabs [aria-selected="true"] p { color: var(--text) !important; font-weight: 600 !important; }
     .stTabs [data-baseweb="tab"] p { color: inherit !important; font-size: 0.82rem !important; margin: 0 !important; }
 
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
@@ -527,8 +534,7 @@ def _chips_html(skills: list, chip_class: str = "") -> str:
 def _render_tier_card(key: str, label: str, skills: list, tone: str):
     with st.container(key=key):
         st.markdown(
-            f"<span class='eyebrow {tone}'>{label}</span>{_chips_html(skills[:6], tone)}",
-            unsafe_allow_html=True
+            f"<span class='eyebrow {tone}'>{label}</span>{_chips_html(skills[:7], tone)}",            unsafe_allow_html=True
         )
 
 MAX_CACHED_ROADMAPS = 10

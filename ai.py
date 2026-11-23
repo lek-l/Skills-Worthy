@@ -50,6 +50,10 @@ _EXCLUDED_SKILLS = {
     'design', 'research', 'modeling', 'automation', 'integration',
     'infrastructure', 'engineering', 'architecture', 'monitoring',
     'documentation', 'security', 'networking', 'communication',
+    #academic fields / degree prerequisites, not learnable tools
+    'statistics', 'mathematics', 'math', 'computer science',
+    'economics', 'finance', 'accounting', 'physics', 'chemistry',
+    'biology', 'calculus', 'linear algebra',
 }
 
 
@@ -232,36 +236,36 @@ Prioritize the most in-demand missing skills first. Nothing else."""
     return _call_groq(prompt, max_tokens=300)
 
 
+TIER_SIZE = 7
+
+
 def compute_skill_tiers(counts: Counter, search_term: str, total_analyzed: int) -> dict:
-    #percentage-based thresholds — absolute, not relative
-    #50%+ means most employers want it, not just "higher than the others"
+    #position based tiers: skills ranked by how many postings mention them
+    #top 7 are must have, next 7 good to have, the next 7 nice to have
+    #the bar chart still shows the real percentage, so the ranking's signal stays visible
     if not counts or total_analyzed == 0:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
     search_words = set(search_term.lower().split())
 
-    filtered = {}
+    ranked = []
     for skill, count in counts.items():
         if _is_role_noise(skill.lower(), search_words):
             continue
         if skill.lower() in _EXCLUDED_SKILLS:
             continue
-        pct = (count / total_analyzed) * 100
-        filtered[skill] = pct
+        ranked.append((skill, count))
 
-    if not filtered:
+    if not ranked:
         return {"must_have": [], "good_to_have": [], "nice_to_have": []}
 
-    sorted_skills = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
-
-    must_have = [s for s, pct in sorted_skills if pct >= 30]
-    good_to_have = [s for s, pct in sorted_skills if 15 <= pct < 30]
-    nice_to_have = [s for s, pct in sorted_skills if pct < 15]
+    ranked.sort(key=lambda x: x[1], reverse=True)
+    skills = [name for name, _ in ranked]
 
     return {
-        "must_have": must_have[:8],
-        "good_to_have": good_to_have[:8],
-        "nice_to_have": nice_to_have[:8],
+        "must_have": skills[:TIER_SIZE],
+        "good_to_have": skills[TIER_SIZE:TIER_SIZE * 2],
+        "nice_to_have": skills[TIER_SIZE * 2:TIER_SIZE * 3],
     }
 
 

@@ -123,35 +123,47 @@ class TestComputeSkillTiers:
             "must_have": [], "good_to_have": [], "nice_to_have": []
         }
 
-    def test_percentage_thresholds(self):
-        #thresholds: must >= 30%, good 15-29%, nice < 15%
-        #out of 10: A=8(80%) must, B=2(20%) good, C=1(10%) nice
+    def test_top_seven_rank_as_must_have(self):
+        #position based: the 7 most frequent skills are must have
+        counts = Counter({f"S{i}": 30 - i for i in range(10)})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 30)
+        assert tiers["must_have"] == [f"S{i}" for i in range(7)]
+
+    def test_next_seven_rank_as_good_to_have(self):
+        #skills ranked 8 through 14 are good to have
+        counts = Counter({f"S{i}": 30 - i for i in range(16)})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 30)
+        assert tiers["good_to_have"] == [f"S{i}" for i in range(7, 14)]
+
+    def test_remainder_ranks_as_nice_to_have(self):
+        #skills ranked 15 onward are nice to have (also capped at 7)
+        counts = Counter({f"S{i}": 30 - i for i in range(18)})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 30)
+        assert tiers["nice_to_have"] == [f"S{i}" for i in range(14, 18)]
+
+    def test_few_skills_all_land_in_must_have(self):
+        #narrow roles: with only a few skills they all rank must have, lower tiers stay empty
         counts = Counter({"A": 8, "B": 2, "C": 1})
         tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
-        assert tiers["must_have"] == ["A"]
-        assert tiers["good_to_have"] == ["B"]
-        assert tiers["nice_to_have"] == ["C"]
+        assert tiers["must_have"] == ["A", "B", "C"]
+        assert tiers["good_to_have"] == []
+        assert tiers["nice_to_have"] == []
 
-    def test_boundaries_are_inclusive_at_lower_edge(self):
-        #out of 20: A=6(30%) must, B=3(15%) good, C=2(10%) nice
-        counts = Counter({"A": 6, "B": 3, "C": 2})
-        tiers = ai.compute_skill_tiers(counts, "unrelated", 20)
-        assert tiers["must_have"] == ["A"]
-        assert tiers["good_to_have"] == ["B"]
-        assert tiers["nice_to_have"] == ["C"]
+    def test_each_tier_capped_at_seven(self):
+        counts = Counter({f"S{i}": 30 - i for i in range(30)})
+        tiers = ai.compute_skill_tiers(counts, "unrelated", 30)
+        assert len(tiers["must_have"]) == 7
+        assert len(tiers["good_to_have"]) == 7
+        assert len(tiers["nice_to_have"]) == 7
 
-    def test_nothing_hits_must_threshold(self):
-        #out of 10: A=2(20%) good, B=1(10%) nice, C=1(10%) nice
-        counts = Counter({"A": 2, "B": 1, "C": 1})
-        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
-        assert tiers["must_have"] == []
-        assert tiers["good_to_have"] == ["A"]
-        assert tiers["nice_to_have"] == ["B", "C"]
-
-    def test_each_tier_capped_at_eight(self):
-        counts = Counter({f"S{i}": 9 for i in range(12)})
-        tiers = ai.compute_skill_tiers(counts, "unrelated", 10)
-        assert len(tiers["must_have"]) == 8
+    def test_academic_prereqs_excluded(self):
+        #degree fields like statistics and mathematics are prerequisites, not learnable skills
+        counts = Counter({"Statistics": 9, "Mathematics": 8, "SQL": 7})
+        tiers = ai.compute_skill_tiers(counts, "data analyst", 10)
+        all_placed = tiers["must_have"] + tiers["good_to_have"] + tiers["nice_to_have"]
+        assert "Statistics" not in all_placed
+        assert "Mathematics" not in all_placed
+        assert "SQL" in all_placed
 
     def test_excludes_role_noise(self):
         counts = Counter({"Data Analysis": 9, "Python": 5})
@@ -168,7 +180,6 @@ class TestComputeSkillTiers:
     def test_casing_preserved(self):
         tiers = ai.compute_skill_tiers(Counter({"Power BI": 8}), "unrelated", 10)
         assert tiers["must_have"] == ["Power BI"]
-
 
 def fake_response(content, finish_reason="stop"):
     from types import SimpleNamespace as NS

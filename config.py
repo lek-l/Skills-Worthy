@@ -7,7 +7,7 @@ load_dotenv()
 JSEARCH_BASE_URL = "https://jsearch.p.rapidapi.com/search"
 JSEARCH_HOST = "jsearch.p.rapidapi.com"
 JSEARCH_API_KEY = os.getenv("JSEARCH_API_KEY")
-JSEARCH_PAGES = 3
+JSEARCH_PAGES = 2
 JSEARCH_TIMEOUT = 15
 
 #groq — non-reasoning model, no token budget wasted on hidden thinking
