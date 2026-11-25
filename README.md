@@ -1,136 +1,63 @@
 # Skills Worthy
 
-*What does the job market actually want right now?*
-
-I kept asking myself this during my own job search. Every job board showed me postings, but none of them told me which skills kept showing up across all of them. What should I actually be learning? What are some non-negotiables for the roles I want?
-
-I could not find a tool that answered that, and so I built one.
+A job market intelligence tool that shows which skills employers actually ask for, ranked across live job postings.
 
 **[skills-worthy-1.streamlit.app](https://skills-worthy-1.streamlit.app)**
 
----
+## Why I built it
+
+During my own job search I kept asking the same question: which skills actually matter for the roles I want? Every job board showed me postings, but none of them told me which skills kept appearing across all of them. I could not find a tool that answered that, so I built one.
 
 ## What it does
 
-Skills Worthy pulls live job postings for any role you search, then it extracts the technical skills that are mentioned in the postings, and turns them into something actionable.
-
-Search data analyst. You will get a frequency-ranked breakdown of every skill across real postings, split into priority tier list, then summarized by AI, and lastly, with a personalized skill gap analysis if you want one.
-
-The core idea is **let the LLM identify, let Python count.** Groq reads each job description and extracts skill names. Python then aggregates the frequencies. That separation keeps the counts accurate and deterministic even when the model output varies.
-
----
+Skills Worthy pulls live job postings for any role you search, extracts the technical skills mentioned across them, and turns the result into something you can act on: a frequency-ranked chart, a priority tier list, a short market summary, and a personalized skill-gap analysis.
 
 ## How to use it
 
-**1. Search a role**  
-Type any job title: *data analyst*, *machine learning engineer*, *quant analyst*, *fintech developer*. More specific searches will give you more targeted results.
-
-**2. Read the skill chart**  
-The bar chart ranks every technical skill found across live postings by how often it appears. Brighter bar = more employers asking for it.
-
-**3. Check the priority tiers**  
-Skills split into three tiers by frequency:
-- **Must Have**: shows up in most postings, non-negotiable
-- **Good To Have**: appears often enough to be a real differentiator
-- **Nice To Have**: mentioned occasionally, worth knowing but not critical
-
-**4. Read the AI insight**  
-A tight 2-sentence market summary built from the extracted skills, covering what the role looks like right now and where to focus.
-
-**5. Run your skill gap**  
-Enter your current skills as a comma-separated list (`Python, SQL, Excel`). You will see your overlap percentage, which skills you already have, which you're missing, and a 5-step learning roadmap prioritized by demand.
-
----
+1. **Search a role.** Type any job title, such as data analyst, product manager, or machine learning engineer. More specific searches return more targeted results.
+2. **Read the skill chart.** Every technical skill found across the postings, ranked by how often it appears. A brighter bar means more employers ask for it.
+3. **Check the priority tiers.** Skills split into Must Have, Good To Have, and Nice To Have, ranked by demand.
+4. **Read the market insight.** A short, generated summary of what the role looks like right now and where to focus.
+5. **Run your skill gap.** Enter the skills you already have. You get your overlap percentage, what you already match, what you are missing, and a prioritized learning roadmap.
 
 ## How it works
 
-```
-search query
-    │
-    ├── JSearch API — 3 pages fetched in parallel
-    │       └── filter by title match → pull descriptions
-    │
-    └── Groq LLaMA 3.3 70B
-            ├── extract skills per posting in batches
-            │       └── normalize aliases → Python counts with Counter
-            │
-            └── parallel calls for:
-                    ├── market insight
-                    ├── soft skills
-                    └── skill categorization
-                            │
-                            └── compute tiers → render in Streamlit
-```
+The core idea: let the language model identify, let Python count.
 
-A few decisions worth calling out:
+1. **Fetch.** The app queries the JSearch API for live postings, two pages in parallel.
+2. **Filter.** It keeps only postings whose title matches every word in your search, so a search for "data analyst" does not pull in "data engineer."
+3. **Extract.** A regex taxonomy of 518 skills across 30 domains scans every description in Python, with no API calls and fully deterministic counting. One model call then reads a short sample to surface niche skills the taxonomy does not know, and Python counts those across the postings too.
+4. **Rank.** Skills are grouped into tiers by frequency: the most-requested are Must Have, the next most-requested Good To Have, the rest Nice To Have.
+5. **Summarize.** A separate model call writes the two-sentence market insight.
+6. **Render.** Results display in a tabbed Streamlit interface with a Plotly chart.
 
-- **Parallel fetching**: JSearch pages and Groq pipeline calls run concurrently, cutting total latency significantly vs sequential requests
-- **Alias normalization**: `js → JavaScript`, `sklearn → Scikit-learn`, etc. so skill variants don't split the frequency count
-- **Roadmap caching**: keyed on `(role, user_skills)` in session state, so Groq only fires when the input actually changes
+This separation keeps the counts accurate even when model output varies: the model is used for recognition, never for arithmetic.
 
----
+## Design decisions
 
-## Libraries
+- **Hybrid extraction over pure LLM.** Asking the model to both find and count skills produced unreliable frequencies. Moving the counting into Python made the numbers deterministic and cut the model calls from more than fifteen per search to three.
+- **Position-based tiers.** Tiers rank by how many postings mention each skill rather than by a fixed percentage cutoff, so roles with spread-out demand still produce useful tiers instead of a near-empty Must Have.
+- **Honest failure messages.** Rate limits, authentication failures, timeouts, and network errors each return a distinct message, so a user always knows whether to retry or wait.
+- **Partial results are never cached.** If some pages fail, the app shows what it got but does not store the thin result, so the next visitor gets a full fetch.
+- **Quota protection.** A shared cache serves repeat searches without new API calls, and a per-session cap keeps one visitor from exhausting the free-tier quota for everyone.
 
-| Library | Why I used it |
+## Tech stack
+
+| Library | Role |
 |---|---|
-| **Streamlit** | Turns Python into a deployable web app without touching any frontend code, perfect for data-heavy tools like this |
-| **Groq** | Fast LLM inference running LLaMA 3.3 70B, handles skill extraction, insight generation, soft skills, and roadmap writing. Free tier made it viable |
-| **Requests** | Clean HTTP client for the JSearch API, handles timeouts and error responses without extra complexity |
-| **Pandas** | Structures skill counts into dataframes for filtering, sorting, and passing to Plotly |
-| **Plotly Express** | Renders the interactive bar chart, cleaner output than Matplotlib and integrates natively with Streamlit |
-| **Collections.Counter** | Python stdlib, fast, exact frequency counting across all postings, no external dependency needed |
-| **python-dotenv** | Loads API keys locally from `.env`, on Streamlit Cloud, keys come from the secrets manager instead |
-| **concurrent.futures** | Python stdlib, runs parallel threads for JSearch fetches and Groq calls, cuts wait time significantly |
+| Streamlit | Web interface, no separate frontend needed |
+| Groq (qwen) | Fast model inference for niche-skill discovery, insight, and roadmap |
+| JSearch (RapidAPI) | Live job posting data |
+| Pandas | Structuring skill counts for ranking and charting |
+| Plotly | The interactive skill-frequency chart |
 
----
+## Testing
 
-## Stack
+The project has 119 tests covering the extraction pipeline, tier logic, skill-gap matching, API error handling, and session state. API calls are mocked, so the suite runs without live keys and verifies behavior such as partial-fetch handling, rate-limit messaging, and the deterministic counting logic.
 
-`Python` · `Streamlit` · `Groq API (LLaMA 3.3 70B)` · `JSearch API` · `Plotly` · `Pandas`  
-Deployed on Streamlit Cloud.
+## Known limitations
 
----
-
-## Run it locally
-
-```bash
-git clone https://github.com/lek-l/Skills-Worthy.git
-cd Skills-Worthy
-pip install -r requirements.txt
-```
-
-Create a `.env` file:
-```
-JSEARCH_API_KEY=your_key
-GROQ_API_KEY=your_key
-```
-
-Both are free:
-- Groq → [console.groq.com](https://console.groq.com)
-- JSearch → [rapidapi.com](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch)
-
-```bash
-streamlit run app.py
-```
-
----
-
-## A few caveats
-
-Broad roles like *product manager* pull a wide mix of subtypes from JSearch: technical PM, data PM, general PM, which can produce a wider-than-expected skill set. That's a data quality limitation on the API side, not a bug. Very niche roles may not have enough postings for meaningful extraction. The app handles both cases with a clear message instead of crashing.
-
-Results are live and vary by day.
-
----
-
-## Project structure
-
-```
-app.py          Streamlit UI and page layout
-ai.py           Groq skill extraction, normalization, tiers, roadmap generation
-analysis.py     Job processing, dataframe building, skill gap computation
-api.py          JSearch client with parallel page fetching
-config.py       Constants and canonical skill alias map
-state.py        Streamlit session state management
-```
+- **Free-tier API.** JSearch allows 200 requests per month, which is roughly 100 searches at two pages each. Heavy use can exhaust the monthly quota.
+- **Latency.** Average JSearch response time is near 11 seconds, so a search is not instant.
+- **Sample size.** Extraction analyzes up to 15 postings per search, which is enough for a strong signal but not exhaustive.
+- **No database yet.** The app has no persistence or SQL layer. A planned second project pairs a public dataset with SQL and a BI tool to cover that ground.
