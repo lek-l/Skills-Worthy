@@ -98,6 +98,14 @@ class TestExtractSkills:
             result = ai.extract_skills(["Python required."] * 40)
         assert result.counts["Python"] == ai.MAX_DESCRIPTIONS
 
+    def test_discover_niche_skips_html_fragments(self):
+        #postings pasted with raw markup must not surface tags like </div> as skills
+        with patch.object(ai, "_call_groq", return_value="Python, </div>, <br>, Workday"):
+            result = ai._discover_niche_skills(["a job description"], set())
+        joined = " ".join(result)
+        assert "<" not in joined and ">" not in joined
+        assert "Workday" in result
+
 
 class TestInsight:
     def test_truncates(self):

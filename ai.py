@@ -143,6 +143,9 @@ Return ONLY a comma-separated list. Nothing else.
         raw = raw.strip()
         if not raw or len(raw) < 2 or len(raw) > 40 or len(raw.split()) > 3:
             continue
+        #skip html or templating fragments that leak in from postings pasted with markup
+        if any(ch in raw for ch in '<>{}'):
+            continue
         normalized = _normalize_skill(raw)
         if not normalized:
             continue
